@@ -729,8 +729,7 @@ const GH_OWNER  = "hmendu-alt";
 const GH_REPO   = "forecasting-dashboard";
 const GH_FILE   = "data.json";
 const GH_BRANCH = "main";
-const GH_PROXY  = "https://github-proxy.hmendu.workers.dev";
-const GH_API    = `${GH_PROXY}?path=repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`;
+const GH_API    = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`;
 
 // Token stored in localStorage — enter via Settings panel on first use
 function ghToken() { return localStorage.getItem("fcast_gh_token") || ""; }
@@ -743,12 +742,12 @@ let ghFileSha = null; // current file SHA — required for PUT updates
 async function ghLoad() {
   const token = ghToken();
   if (!token) return null;
-  const r = await fetch(`${GH_API}&ref=${GH_BRANCH}&t=${Date.now()}`, {
+  const r = await fetch(`${GH_API}?ref=${GH_BRANCH}&cb=${Date.now()}`, {
     method: "GET",
-    mode: "cors",
     headers: {
       "Authorization": `token ${token}`,
-      "Accept": "application/vnd.github.v3+json"
+      "Accept": "application/vnd.github.v3+json",
+      "X-GitHub-Api-Version": "2022-11-28"
     }
   });
   if (!r.ok) {
@@ -772,12 +771,11 @@ async function ghSave(data) {
   if (ghFileSha) body.sha = ghFileSha;
   const r = await fetch(GH_API, {
     method: "PUT",
-    mode: "cors",
     headers: {
       "Authorization": `token ${token}`,
       "Accept": "application/vnd.github.v3+json",
       "Content-Type": "application/json",
-      "X-Requested-With": "XMLHttpRequest"
+      "X-GitHub-Api-Version": "2022-11-28"
     },
     body: JSON.stringify(body)
   });
@@ -1660,9 +1658,13 @@ async function testGhConnection() {
   if (!token) { resultEl.textContent = "❌ No token entered"; resultEl.style.color="#ef4444"; return; }
   resultEl.textContent = "Testing…"; resultEl.style.color="#64748b";
   try {
-    const r = await fetch(`${GH_API}&ref=${GH_BRANCH}&t=${Date.now()}`, {
-      method: "GET", mode: "cors",
-      headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
+    const r = await fetch(`${GH_API}?ref=${GH_BRANCH}&cb=${Date.now()}`, {
+      method: "GET",
+      headers: {
+        "Authorization": `token ${token}`,
+        "Accept": "application/vnd.github.v3+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+      }
     });
     if (r.ok) {
       resultEl.textContent = "✅ Connected! GitHub sync is working.";
