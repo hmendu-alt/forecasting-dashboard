@@ -225,6 +225,8 @@
       </div>
     </div>
     <p style="font-size:11px;color:#64748b;margin-top:4px">Token is stored in your browser only. Get one at github.com/settings/tokens — needs <strong>repo</strong> scope.</p>
+      <button type="button" onclick="testGhConnection()" style="margin-top:6px;background:#e2e8f0;color:#1e293b;border:none;border-radius:5px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600">Test Connection</button>
+      <span id="gh-test-result" style="font-size:12px;margin-left:10px"></span>
   </div>
   <div class="settings-section">
     <h4>Distribution &amp; Escalation</h4>
@@ -741,12 +743,18 @@ async function ghLoad() {
   const token = ghToken();
   if (!token) return null;
   const r = await fetch(`${GH_API}?ref=${GH_BRANCH}&t=${Date.now()}`, {
+    method: "GET",
+    mode: "cors",
     headers: {
       "Authorization": `token ${token}`,
-      "Accept": "application/vnd.github.v3+json"
+      "Accept": "application/vnd.github.v3+json",
+      "X-Requested-With": "XMLHttpRequest"
     }
   });
-  if (!r.ok) throw new Error(`GitHub load failed: ${r.status}`);
+  if (!r.ok) {
+    const errText = await r.text().catch(()=>"");
+    throw new Error(`GitHub load failed: ${r.status} — ${errText.slice(0,100)}`);
+  }
   const d = await r.json();
   ghFileSha = d.sha;
   const decoded = JSON.parse(atob(d.content.replace(/\n/g, "")));
@@ -764,14 +772,19 @@ async function ghSave(data) {
   if (ghFileSha) body.sha = ghFileSha;
   const r = await fetch(GH_API, {
     method: "PUT",
+    mode: "cors",
     headers: {
       "Authorization": `token ${token}`,
       "Accept": "application/vnd.github.v3+json",
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "X-Requested-With": "XMLHttpRequest"
     },
     body: JSON.stringify(body)
   });
-  if (!r.ok) throw new Error(`GitHub save failed: ${r.status}`);
+  if (!r.ok) {
+    const errText = await r.text().catch(()=>"");
+    throw new Error(`GitHub save failed: ${r.status} — ${errText.slice(0,100)}`);
+  }
   const d = await r.json();
   ghFileSha = d.content.sha;
 }
@@ -1637,6 +1650,34 @@ function esc(s) {
 // ════════════════════════════════════════════════════════════════
 // INIT
 // ════════════════════════════════════════════════════════════════
+
+// ════════════════════════════════════════════════════════════════
+// TEST GITHUB CONNECTION
+// ════════════════════════════════════════════════════════════════
+async function testGhConnection() {
+  const token = document.getElementById("input-gh-token").value.trim() || ghToken();
+  const resultEl = document.getElementById("gh-test-result");
+  if (!token) { resultEl.textContent = "❌ No token entered"; resultEl.style.color="#ef4444"; return; }
+  resultEl.textContent = "Testing…"; resultEl.style.color="#64748b";
+  try {
+    const r = await fetch(`https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}?ref=${GH_BRANCH}&t=${Date.now()}`, {
+      method: "GET", mode: "cors",
+      headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
+    });
+    if (r.ok) {
+      resultEl.textContent = "✅ Connected! GitHub sync is working.";
+      resultEl.style.color="#00674B";
+    } else {
+      const d = await r.json().catch(()=>({}));
+      resultEl.textContent = `❌ Failed: ${r.status} — ${d.message||"Unknown error"}`;
+      resultEl.style.color="#ef4444";
+    }
+  } catch(e) {
+    resultEl.textContent = `❌ Error: ${e.message}`;
+    resultEl.style.color="#ef4444";
+  }
+}
+
 (async () => {
   document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
   document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
@@ -1670,7 +1711,7 @@ function esc(s) {
       showToast("⚠️ GitHub sync failed: " + e.message + ". Showing local data.");
     }
   } else {
-    showToast("ℹ️ No GitHub token — enter one in Settings to enable live sync.");
+    showToast("ℹ️ Enter your GitHub token in Settings to enable live sync.");
   }
 })();
 </script>
