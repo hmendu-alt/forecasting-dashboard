@@ -207,7 +207,10 @@
 
 <!-- ══ SETTINGS PANEL ══ -->
 <div id="settings-panel">
-  <h3>Dashboard Settings</h3>
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+    <h3 style="margin-bottom:0">Dashboard Settings</h3>
+    <button onclick="closeSettings()" style="background:var(--wf-green);color:#fff;border:none;border-radius:6px;padding:7px 16px;cursor:pointer;font-size:12px;font-weight:600;display:flex;align-items:center;gap:6px">&#8592; Back to Dashboard</button>
+  </div>
   <p>Changes are saved to your browser. Email fields open your default mail client when notifications are triggered.</p>
 
   <div class="settings-section">
@@ -1589,6 +1592,11 @@ document.getElementById("btn-confirm-reset").onclick = () => {
 // ════════════════════════════════════════════════════════════════
 // SETTINGS
 // ════════════════════════════════════════════════════════════════
+function closeSettings() {
+  document.getElementById("settings-panel").classList.remove("open");
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 document.getElementById("btn-settings").onclick = () => {
   const p = document.getElementById("settings-panel");
   p.classList.toggle("open");
