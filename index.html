@@ -837,6 +837,35 @@ function ghLoading(show) {
 }
 
 // ════════════════════════════════════════════════════════════════
+// CONSTANTS & STORAGE KEYS
+// ════════════════════════════════════════════════════════════════
+const STORAGE_KEY   = "fcast_state_v3";
+const EMAIL_KEY     = "fcast_emails_v3";
+const NOTIFIED_KEY  = "fcast_notified_v2";
+const OVERRIDE_KEY  = "fcast_overrides_v1";
+const DISTRO_KEY    = "fcast_distro_v1";
+const TZ_KEY        = "fcast_tz_v1";
+
+const STATUS = { NOT_READY:"notready", READY:"ready", IN_PROGRESS:"inprogress", COMPLETE:"complete", BLOCKED:"blocked" };
+
+const STATUS_META = {
+  notready:   ["Not Ready",   "badge-notready",   "status-notready"],
+  ready:      ["Ready",       "badge-ready",      "status-ready"],
+  inprogress: ["In Progress", "badge-inprogress",  "status-inprogress"],
+  complete:   ["Complete",    "badge-complete",    "status-complete"],
+  blocked:    ["Blocked",     "badge-blocked",     "status-blocked"],
+};
+
+const DEFAULT_EMAILS = {
+  "Eric":            "",
+  "Nazia":           "",
+  "Anju/Billy":      "",
+  "Store Leadership":"",
+  "Khalid/Sched":    "",
+  "Automated":       ""
+};
+
+// ════════════════════════════════════════════════════════════════
 // STATE
 // ════════════════════════════════════════════════════════════════
 let taskState    = {};  // { [id]: { status, comment, manualBlock, startedAt, completedAt, blockedAt } }
