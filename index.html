@@ -274,28 +274,19 @@
         <label>Dashboard PIN (4 digits)</label>
         <input type="password" id="input-pin" maxlength="4" placeholder="Enter new PIN" style="letter-spacing:4px;text-align:center">
       </div>
-      <div class="settings-field">
-        <label>Shared GitHub Token (all users read/write via this)</label>
-        <input type="password" id="input-shared-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-      </div>
+
     </div>
     <p style="font-size:11px;color:#64748b;margin-top:4px">The token is stored locally after PIN unlock — not visible in the URL or page source.</p>
   </div>
   <div class="settings-section">
-    <h4>Live Sync (GitHub)</h4>
-    <p style="font-size:11px;color:#64748b;margin-bottom:8px">All users can <strong>read</strong> live state automatically (no token needed). To <strong>write</strong> updates that sync to all users, enter a GitHub token below.</p>
-    <div class="distro-row">
-      <div class="distro-field">
-        <label>GitHub Token — needed to save updates (get at github.com/settings/tokens, repo scope)</label>
-        <input type="password" id="input-gh-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
-      <button type="button" onclick="testGhSync()" style="background:#e2e8f0;color:#1e293b;border:none;border-radius:5px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600">Test Read</button>
-      <span id="gh-test-result" style="font-size:12px;color:#64748b;align-self:center"></span>
+    <h4>Live Sync</h4>
+    <p style="font-size:11px;color:#64748b;margin-bottom:8px">Dashboard syncs automatically with SharePoint every 30 seconds. All users logged into Microsoft 365 see live updates.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button type="button" onclick="testSpSync()" style="background:#e2e8f0;color:#1e293b;border:none;border-radius:5px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600">Test SharePoint Connection</button>
+      <span id="sp-test-result" style="font-size:12px;color:#64748b;align-self:center"></span>
     </div>
     <div style="margin-top:10px;padding-top:10px;border-top:1px solid #e2e8f0">
-      <p style="font-size:11px;color:#64748b;margin-bottom:6px">No token? Use manual sync:</p>
+      <p style="font-size:11px;color:#64748b;margin-bottom:6px">Manual sync (offline fallback):</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" onclick="exportState()" style="background:#00674B;color:#fff;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:600">📋 Export State</button>
         <button type="button" onclick="openImportModal()" style="background:#3b82f6;color:#fff;border:none;border-radius:5px;padding:6px 12px;cursor:pointer;font-size:11px;font-weight:600">📥 Import State</button>
@@ -810,96 +801,133 @@ const TASK_DEFINITIONS = [
 // CONSTANTS & STORAGE KEYS
 // ════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════
-// SYNC — github.io (read, no auth) + GitHub API (write, token needed)
+// SHAREPOINT SYNC
 // ════════════════════════════════════════════════════════════════
-const GH_OWNER  = "hmendu-alt";
-const GH_REPO   = "forecasting-dashboard";
-const GH_FILE   = "data.json";
-const GH_BRANCH = "main";
-const GH_RAW    = `https://${GH_OWNER}.github.io/${GH_REPO}/${GH_FILE}`;
-const GH_API    = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`;
+const SP_SITE   = "https://amedeloitte.sharepoint.com/sites/WholeFoodsTechModernization-WFMUKGAudit";
+const SP_LIST   = "ForecastDashboardState";
+const SP_TYPE   = "SP.Data.ForecastDashboardStateListItem";
+const IS_SP     = window.location.hostname.includes("sharepoint.com") ||
+                  window.location.hostname.includes("github.io");
 
-function ghToken() { return localStorage.getItem("fcast_gh_token") || ""; }
-let ghFileSha = null;
+let spItemMap = {};
 
-// READ via github.io Pages URL — same domain, no auth, no CORS issues
-async function ghLoad() {
-  const r = await fetch(`${GH_RAW}?cb=${Date.now()}`, { cache: "no-store" });
-  if (!r.ok) throw new Error(`Load failed: ${r.status}`);
+// ── SP REST helpers ──
+async function spDigest() {
+  const r = await fetch(`${SP_SITE}/_api/contextinfo`, {
+    method: "POST", credentials: "include",
+    headers: { "Accept": "application/json;odata=verbose", "Content-Type": "application/json;odata=verbose" }
+  });
+  if (!r.ok) throw new Error("Digest failed: " + r.status);
+  const d = await r.json();
+  return d.d.GetContextWebInformation.FormDigestValue;
+}
+
+async function spGet(url) {
+  const r = await fetch(url, {
+    credentials: "include",
+    headers: { "Accept": "application/json;odata=verbose" }
+  });
+  if (!r.ok) throw new Error("SP GET " + r.status);
   return r.json();
 }
 
-// WRITE via GitHub API — requires token
-async function ghSave(data) {
-  const token = ghToken();
-  if (!token) return;
-  // Get current SHA first
-  const shaR = await fetch(GH_API, {
-    headers: { "Authorization": `token ${token}`, "Accept": "application/vnd.github.v3+json" }
-  });
-  if (!shaR.ok) throw new Error(`SHA fetch failed: ${shaR.status}`);
-  const shaD = await shaR.json();
-  ghFileSha = shaD.sha;
-
-  const body = {
-    message: `Dashboard update ${new Date().toISOString()}`,
-    content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
-    sha: ghFileSha,
-    branch: GH_BRANCH
+async function spWrite(url, body, method) {
+  const digest = await spDigest();
+  const headers = {
+    "Accept":          "application/json;odata=verbose",
+    "Content-Type":    "application/json;odata=verbose",
+    "X-RequestDigest": digest
   };
-  const r = await fetch(GH_API, {
-    method: "PUT",
-    headers: {
-      "Authorization": `token ${token}`,
-      "Accept": "application/vnd.github.v3+json",
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(body)
+  if (method) { headers["X-HTTP-Method"] = method; headers["If-Match"] = "*"; }
+  const r = await fetch(url, {
+    method: "POST", credentials: "include",
+    headers, body: JSON.stringify(body)
   });
-  if (!r.ok) {
-    const e = await r.json().catch(()=>({}));
-    throw new Error(`Save failed: ${r.status} — ${e.message||""}`);
-  }
+  if (!r.ok && r.status !== 204) throw new Error("SP write " + r.status);
+  return method ? null : r.json();
 }
 
-function buildGhData() {
-  return { lastUpdated: new Date().toISOString(), taskState, taskOverrides, emailMap, distroConfig, selectedTZ };
+function spItemBody(taskId) {
+  const s  = taskState[taskId] || {};
+  const ov = taskOverrides[taskId] || {};
+  return {
+    "__metadata":           { "type": SP_TYPE },
+    "TaskStatus":           s.status       || "",
+    "TaskComment":          s.comment      || "",
+    "ManualBlock":          !!s.manualBlock,
+    "StartedAt":            s.startedAt    || "",
+    "CompletedAt":          s.completedAt  || "",
+    "BlockedAt":            s.blockedAt    || "",
+    "OwnerOverride":        ov.owner       || "",
+    "ReadyWhenOverride":    ov.readyWhen   || "",
+    "DueByOverride":        ov.dueBy       || "",
+    "FileFormatOverride":   ov.fileFormat  || "",
+    "InstructionsOverride": ov.instructions ? JSON.stringify(ov.instructions) : ""
+  };
 }
 
-function applyGhData(data) {
-  if (data.taskState)     taskState     = data.taskState;
-  if (data.taskOverrides) taskOverrides = data.taskOverrides;
-  if (data.emailMap)      emailMap      = data.emailMap;
-  if (data.distroConfig)  distroConfig  = data.distroConfig;
-  if (data.selectedTZ)    selectedTZ    = data.selectedTZ;
-  TASK_DEFINITIONS.forEach(t => {
-    if (!taskState[t.id]) taskState[t.id] = { status:"notready", comment:"", manualBlock:false, startedAt:null, completedAt:null, blockedAt:null };
-  });
+async function spCreateItem(taskId) {
+  const body = { ...spItemBody(taskId), "Title": String(taskId) };
+  const d    = await spWrite(`${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items`, body);
+  spItemMap[taskId] = d.d.Id;
 }
 
-// Called after every state change
+async function spUpdateItem(taskId) {
+  if (!spItemMap[taskId]) { await spCreateItem(taskId); return; }
+  await spWrite(
+    `${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items(${spItemMap[taskId]})`,
+    spItemBody(taskId), "MERGE"
+  );
+}
+
 async function persistTask(taskId) {
   localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState));
   localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides));
-  if (ghToken()) {
-    ghSave(buildGhData()).catch(e => showToast("⚠️ Sync failed: " + e.message));
-  }
+  spUpdateItem(taskId).catch(e => showToast("⚠️ SP save failed: " + e.message));
 }
 
-// Poll every 30s for live updates
-async function ghRefresh() {
+async function spLoad() {
+  const cols = "Id,Title,TaskStatus,TaskComment,ManualBlock,StartedAt,CompletedAt,BlockedAt,OwnerOverride,ReadyWhenOverride,DueByOverride,FileFormatOverride,InstructionsOverride";
+  const d = await spGet(`${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items?$top=100&$select=${cols}`);
+  return d.d.results;
+}
+
+function applySpItems(items) {
+  items.forEach(item => {
+    const id = parseInt(item.Title);
+    if (!id) return;
+    spItemMap[id] = item.Id;
+    taskState[id] = {
+      status:      item.TaskStatus  || STATUS.NOT_READY,
+      comment:     item.TaskComment || "",
+      manualBlock: item.ManualBlock || false,
+      startedAt:   item.StartedAt   || null,
+      completedAt: item.CompletedAt || null,
+      blockedAt:   item.BlockedAt   || null
+    };
+    if (!taskOverrides[id]) taskOverrides[id] = {};
+    if (item.OwnerOverride)        taskOverrides[id].owner        = item.OwnerOverride;
+    if (item.ReadyWhenOverride)    taskOverrides[id].readyWhen    = item.ReadyWhenOverride;
+    if (item.DueByOverride)        taskOverrides[id].dueBy        = item.DueByOverride;
+    if (item.FileFormatOverride)   taskOverrides[id].fileFormat   = item.FileFormatOverride;
+    if (item.InstructionsOverride) { try { taskOverrides[id].instructions = JSON.parse(item.InstructionsOverride); } catch(e){} }
+  });
+}
+
+async function spRefresh() {
   try {
-    const data = await ghLoad();
-    applyGhData(data);
+    const items = await spLoad();
+    applySpItems(items);
     localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState));
     localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides));
     render();
-  } catch(e) { console.warn("Refresh failed:", e); }
+  } catch(e) { console.warn("SP refresh failed:", e); }
 }
 
-// Export/import for users without a token
+// Export/import kept as manual fallback
 function exportState() {
-  const json = JSON.stringify(buildGhData(), null, 2);
+  const data = { lastUpdated: new Date().toISOString(), taskState, taskOverrides, emailMap, distroConfig, selectedTZ };
+  const json = JSON.stringify(data, null, 2);
   navigator.clipboard.writeText(json)
     .then(() => showToast("✅ State copied to clipboard."))
     .catch(() => {
@@ -913,14 +941,16 @@ function exportState() {
 function importState(json) {
   try {
     const data = JSON.parse(json);
-    applyGhData(data);
-    localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState));
-    localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides));
-    localStorage.setItem(EMAIL_KEY,    JSON.stringify(emailMap));
-    localStorage.setItem(DISTRO_KEY,   JSON.stringify(distroConfig));
-    localStorage.setItem(TZ_KEY,       selectedTZ);
+    if (data.taskState)     { taskState     = data.taskState;     localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState)); }
+    if (data.taskOverrides) { taskOverrides = data.taskOverrides; localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides)); }
+    if (data.emailMap)      { emailMap      = data.emailMap;      localStorage.setItem(EMAIL_KEY,    JSON.stringify(emailMap)); }
+    if (data.distroConfig)  { distroConfig  = data.distroConfig;  localStorage.setItem(DISTRO_KEY,   JSON.stringify(distroConfig)); }
+    if (data.selectedTZ)    { selectedTZ    = data.selectedTZ;    localStorage.setItem(TZ_KEY,        selectedTZ); }
+    TASK_DEFINITIONS.forEach(t => {
+      if (!taskState[t.id]) taskState[t.id] = { status:"notready", comment:"", manualBlock:false, startedAt:null, completedAt:null, blockedAt:null };
+    });
     render();
-    showToast("✅ State imported successfully.");
+    showToast("✅ State imported.");
   } catch(e) { showToast("❌ Import failed: " + e.message); }
 }
 
@@ -1676,9 +1706,7 @@ function buildSettingsUI() {
   document.getElementById("input-distro").value    = distroConfig.distroEmail || "";
   document.getElementById("input-sponsor").value   = distroConfig.sponsorEmail || "";
   document.getElementById("input-tz").value         = selectedTZ || "America/Chicago";
-  const tEl = document.getElementById("input-gh-token"); if(tEl) tEl.value = ghToken() || "";
   const pinEl = document.getElementById("input-pin"); if(pinEl) pinEl.value = "";
-  const stEl = document.getElementById("input-shared-token"); if(stEl) stEl.value = getSharedToken() || "";
 
 }
 
@@ -1731,12 +1759,12 @@ function esc(s) {
 // ════════════════════════════════════════════════════════════════
 // SYNC HELPERS
 // ════════════════════════════════════════════════════════════════
-async function testGhSync() {
-  const el = document.getElementById("gh-test-result");
-  el.textContent = "Testing…";
+async function testSpSync() {
+  const el = document.getElementById("sp-test-result");
+  el.textContent = "Testing…"; el.style.color = "#64748b";
   try {
-    const d = await ghLoad();
-    el.textContent = "✅ Read works — " + Object.keys(d.taskState||{}).length + " tasks loaded";
+    const d = await spGet(`${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items?$top=1`);
+    el.textContent = "✅ SharePoint connected — sync is live.";
     el.style.color = "#00674B";
   } catch(e) {
     el.textContent = "❌ " + e.message;
@@ -1803,9 +1831,7 @@ function updatePinDots() {
 function checkPin() {
   if (pinEntry === getPin()) {
     sessionStorage.setItem(PIN_SESSION, "1");
-    // Set shared token from PIN-protected storage
-    const tok = getSharedToken();
-    if (tok) localStorage.setItem("fcast_gh_token", tok);
+
     document.getElementById("pin-overlay").classList.add("hidden");
     initDashboard();
   } else {
@@ -1829,25 +1855,35 @@ async function initDashboard() {
   document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
   document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
   loadAll();
-  render();
+  render(); // show local state immediately
   try {
-    const data = await ghLoad();
-    applyGhData(data);
+    const items = await spLoad();
+    // Create missing SP rows for any tasks not yet in the list
+    for (const t of TASK_DEFINITIONS) {
+      if (!spItemMap[t.id]) {
+        taskState[t.id] = { status: STATUS.NOT_READY, comment: "", manualBlock: false, startedAt: null, completedAt: null, blockedAt: null };
+        await spCreateItem(t.id);
+      }
+    }
+    applySpItems(items);
     localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState));
     localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides));
     document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
     render();
-    showToast("✅ Live state loaded from GitHub.");
-    setInterval(ghRefresh, 30000);
+    showToast("✅ Connected to SharePoint — live sync active.");
+    setInterval(spRefresh, 30000); // poll every 30s
   } catch(e) {
-    showToast("ℹ️ Using local state — " + e.message);
+    console.error("SP init error:", e);
+    if (e.message.includes("403")) {
+      showToast("⚠️ SharePoint access denied. Ensure you have Contribute permission on ForecastDashboardState.");
+    } else {
+      showToast("ℹ️ Using local state — " + e.message);
+    }
   }
 }
 
 (async () => {
   if (isUnlocked()) {
-    const tok = getSharedToken();
-    if (tok) localStorage.setItem("fcast_gh_token", tok);
     document.getElementById("pin-overlay").classList.add("hidden");
     await initDashboard();
   }
