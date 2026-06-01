@@ -1,0 +1,139 @@
+{
+  "lastUpdated": "",
+  "taskState": {
+    "1": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "2": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "3": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "4": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "5": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "6": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "7": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "8": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "9": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "10": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "11": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "12": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "13": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "14": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    },
+    "15": {
+      "status": "notready",
+      "comment": "",
+      "manualBlock": false,
+      "startedAt": null,
+      "completedAt": null,
+      "blockedAt": null
+    }
+  },
+  "taskOverrides": {},
+  "emailMap": {
+    "Eric": "",
+    "Nazia": "",
+    "Anju/Billy": "",
+    "Store Leadership": "",
+    "Khalid/Sched": "",
+    "Automated": ""
+  },
+  "distroConfig": {
+    "distroEmail": "",
+    "sponsorEmail": ""
+  },
+  "selectedTZ": "America/Chicago"
+}
