@@ -184,10 +184,57 @@
   .toast { background: #1e293b; color: #fff; padding: 11px 16px; border-radius: 8px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.2); max-width: 340px; animation: slideIn .2s ease; }
   @keyframes slideIn { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 
+
+  /* ── PIN Lock Screen ── */
+  #pin-overlay { display:flex; position:fixed; inset:0; background:#f4f6f4; z-index:999; align-items:center; justify-content:center; flex-direction:column; }
+  #pin-overlay.hidden { display:none; }
+  #pin-box { background:#fff; border-radius:14px; padding:36px 40px; box-shadow:0 4px 24px rgba(0,0,0,.10); width:320px; text-align:center; }
+  #pin-box h2 { font-size:18px; font-weight:700; color:var(--wf-green); margin-bottom:6px; }
+  #pin-box p { font-size:12px; color:#64748b; margin-bottom:20px; }
+  #pin-dots { display:flex; justify-content:center; gap:12px; margin-bottom:20px; }
+  .pin-dot { width:14px; height:14px; border-radius:50%; background:#e2e8f0; border:2px solid #cbd5e1; transition:background .15s; }
+  .pin-dot.filled { background:var(--wf-green); border-color:var(--wf-green); }
+  #pin-keypad { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .pin-key { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:14px 0; font-size:18px; font-weight:600; color:#1e293b; cursor:pointer; transition:background .1s; }
+  .pin-key:hover { background:#e2e8f0; }
+  .pin-key:active { background:#d0eee0; }
+  #pin-error { font-size:12px; color:#ef4444; margin-top:12px; min-height:18px; }
+  #pin-change-row { margin-top:16px; border-top:1px solid #e2e8f0; padding-top:14px; }
+  #pin-change-row label { font-size:11px; font-weight:600; color:#64748b; display:block; margin-bottom:4px; }
+  #pin-change-input { width:100%; border:1px solid #cbd5e1; border-radius:5px; padding:6px 9px; font-size:13px; text-align:center; letter-spacing:4px; }
   @media (max-width: 900px) { #table-wrap { padding: 10px 8px; } td, th { padding: 7px 7px; } }
 </style>
 </head>
 <body>
+
+<!-- ══ PIN LOCK SCREEN ══ -->
+<div id="pin-overlay">
+  <div id="pin-box">
+    <h2>Weekly Forecasting Dashboard</h2>
+    <p>Enter your PIN to access the dashboard</p>
+    <div id="pin-dots">
+      <div class="pin-dot" id="dot-0"></div>
+      <div class="pin-dot" id="dot-1"></div>
+      <div class="pin-dot" id="dot-2"></div>
+      <div class="pin-dot" id="dot-3"></div>
+    </div>
+    <div id="pin-keypad">
+      <button class="pin-key" onclick="pinKey('1')">1</button>
+      <button class="pin-key" onclick="pinKey('2')">2</button>
+      <button class="pin-key" onclick="pinKey('3')">3</button>
+      <button class="pin-key" onclick="pinKey('4')">4</button>
+      <button class="pin-key" onclick="pinKey('5')">5</button>
+      <button class="pin-key" onclick="pinKey('6')">6</button>
+      <button class="pin-key" onclick="pinKey('7')">7</button>
+      <button class="pin-key" onclick="pinKey('8')">8</button>
+      <button class="pin-key" onclick="pinKey('9')">9</button>
+      <button class="pin-key" onclick="pinClear()" style="font-size:13px;color:#64748b">Clear</button>
+      <button class="pin-key" onclick="pinKey('0')">0</button>
+      <button class="pin-key" onclick="pinBack()" style="font-size:16px;color:#64748b">&#8592;</button>
+    </div>
+    <div id="pin-error"></div>
+  </div>
+</div>
 
 <!-- ══ HEADER ══ -->
 <div id="header">
@@ -219,6 +266,21 @@
     <div class="settings-grid" id="settings-email-grid"></div>
   </div>
 
+  <div class="settings-section">
+    <h4>Access Control</h4>
+    <p style="font-size:11px;color:#64748b;margin-bottom:8px">Set the PIN that protects the dashboard. Share this PIN with your team — they enter it on first load.</p>
+    <div class="settings-grid">
+      <div class="settings-field">
+        <label>Dashboard PIN (4 digits)</label>
+        <input type="password" id="input-pin" maxlength="4" placeholder="Enter new PIN" style="letter-spacing:4px;text-align:center">
+      </div>
+      <div class="settings-field">
+        <label>Shared GitHub Token (all users read/write via this)</label>
+        <input type="password" id="input-shared-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+      </div>
+    </div>
+    <p style="font-size:11px;color:#64748b;margin-top:4px">The token is stored locally after PIN unlock — not visible in the URL or page source.</p>
+  </div>
   <div class="settings-section">
     <h4>Live Sync (GitHub)</h4>
     <p style="font-size:11px;color:#64748b;margin-bottom:8px">All users can <strong>read</strong> live state automatically (no token needed). To <strong>write</strong> updates that sync to all users, enter a GitHub token below.</p>
@@ -1615,6 +1677,8 @@ function buildSettingsUI() {
   document.getElementById("input-sponsor").value   = distroConfig.sponsorEmail || "";
   document.getElementById("input-tz").value         = selectedTZ || "America/Chicago";
   const tEl = document.getElementById("input-gh-token"); if(tEl) tEl.value = ghToken() || "";
+  const pinEl = document.getElementById("input-pin"); if(pinEl) pinEl.value = "";
+  const stEl = document.getElementById("input-shared-token"); if(stEl) stEl.value = getSharedToken() || "";
 
 }
 
@@ -1696,12 +1760,76 @@ function doImport() {
   closeModal("modal-import");
 }
 
-(async () => {
+// ════════════════════════════════════════════════════════════════
+// PIN LOCK
+// ════════════════════════════════════════════════════════════════
+const PIN_KEY        = "fcast_pin_v1";
+const PIN_TOKEN_KEY  = "fcast_pin_token_v1";
+const PIN_SESSION    = "fcast_unlocked_v1";
+const DEFAULT_PIN    = "1234";
+
+function getPin()   { return localStorage.getItem(PIN_KEY) || DEFAULT_PIN; }
+function getSharedToken() { return localStorage.getItem(PIN_TOKEN_KEY) || ""; }
+
+let pinEntry = "";
+
+function pinKey(digit) {
+  if (pinEntry.length >= 4) return;
+  pinEntry += digit;
+  updatePinDots();
+  if (pinEntry.length === 4) {
+    setTimeout(checkPin, 120);
+  }
+}
+
+function pinBack() {
+  pinEntry = pinEntry.slice(0, -1);
+  updatePinDots();
+  document.getElementById("pin-error").textContent = "";
+}
+
+function pinClear() {
+  pinEntry = "";
+  updatePinDots();
+  document.getElementById("pin-error").textContent = "";
+}
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    document.getElementById(`dot-${i}`).classList.toggle("filled", i < pinEntry.length);
+  }
+}
+
+function checkPin() {
+  if (pinEntry === getPin()) {
+    sessionStorage.setItem(PIN_SESSION, "1");
+    // Set shared token from PIN-protected storage
+    const tok = getSharedToken();
+    if (tok) localStorage.setItem("fcast_gh_token", tok);
+    document.getElementById("pin-overlay").classList.add("hidden");
+    initDashboard();
+  } else {
+    document.getElementById("pin-error").textContent = "Incorrect PIN — try again";
+    pinEntry = "";
+    updatePinDots();
+    // Shake animation
+    const box = document.getElementById("pin-box");
+    box.style.transform = "translateX(-8px)";
+    setTimeout(() => box.style.transform = "translateX(8px)", 80);
+    setTimeout(() => box.style.transform = "translateX(-4px)", 160);
+    setTimeout(() => box.style.transform = "translateX(0)", 240);
+  }
+}
+
+function isUnlocked() {
+  return sessionStorage.getItem(PIN_SESSION) === "1";
+}
+
+async function initDashboard() {
   document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
   document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
   loadAll();
-  render(); // show local state immediately
-  // Load live state from GitHub raw (no auth, no CORS issues)
+  render();
   try {
     const data = await ghLoad();
     applyGhData(data);
@@ -1710,10 +1838,20 @@ function doImport() {
     document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
     render();
     showToast("✅ Live state loaded from GitHub.");
-    setInterval(ghRefresh, 30000); // poll every 30s
+    setInterval(ghRefresh, 30000);
   } catch(e) {
     showToast("ℹ️ Using local state — " + e.message);
   }
+}
+
+(async () => {
+  if (isUnlocked()) {
+    const tok = getSharedToken();
+    if (tok) localStorage.setItem("fcast_gh_token", tok);
+    document.getElementById("pin-overlay").classList.add("hidden");
+    await initDashboard();
+  }
+  // else: PIN overlay stays visible, initDashboard() called after correct PIN
 })();
 </script>
 </body>
