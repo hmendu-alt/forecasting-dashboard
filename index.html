@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' https://amedeloitte.sharepoint.com; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https://amedeloitte.sharepoint.com; img-src 'self' data:;">
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Weekly Forecasting Dashboard</title>
@@ -215,6 +216,16 @@
     <div class="settings-grid" id="settings-email-grid"></div>
   </div>
 
+  <div class="settings-section">
+    <h4>GitHub Sync</h4>
+    <div class="distro-row">
+      <div class="distro-field">
+        <label>GitHub Personal Access Token (enables live multi-user sync via GitHub)</label>
+        <input type="password" id="input-gh-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
+      </div>
+    </div>
+    <p style="font-size:11px;color:#64748b;margin-top:4px">Token is stored in your browser only. Get one at github.com/settings/tokens — needs <strong>repo</strong> scope.</p>
+  </div>
   <div class="settings-section">
     <h4>Distribution &amp; Escalation</h4>
     <div class="distro-row">
@@ -710,160 +721,120 @@ const TASK_DEFINITIONS = [
 // CONSTANTS & STORAGE KEYS
 // ════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════
-// SHAREPOINT CONFIG
+// GITHUB CONFIG
 // ════════════════════════════════════════════════════════════════
-const SP_SITE = "https://amedeloitte.sharepoint.com/sites/WholeFoodsTechModernization-WFMUKGAudit/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FWholeFoodsTechModernization%2DWFMUKGAudit%2FShared%20Documents%2FWFM%20UKG%20Implementation%2FPhase%202&viewid=56867c42%2Def34%2D459d%2Da6ef%2D3d5f847a3bf4&newTargetListUrl=%2Fsites%2FWholeFoodsTechModernization%2DWFMUKGAudit%2FShared%20Documents&viewpath=%2Fsites%2FWholeFoodsTechModernization%2DWFMUKGAudit%2FShared%20Documents%2FForms%2FAllItems%2Easpx"; // ← UPDATE THIS
-const SP_LIST = "ForecastDashboardState";
-const SP_TYPE = "SP.Data.ForecastDashboardStateListItem";
-const IS_SHAREPOINT = window.location.hostname.includes("sharepoint.com");
-let spItemMap = {}; // { taskId → SP list item numeric Id }
+const GH_OWNER  = "hmendu-alt";
+const GH_REPO   = "forecasting-dashboard";
+const GH_FILE   = "data.json";
+const GH_BRANCH = "main";
+const GH_API    = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`;
+
+// Token stored in localStorage — set via Settings panel
+function ghToken() { return localStorage.getItem("fcast_gh_token") || ""; }
+
+let ghFileSha = null; // current file SHA — required for PUT updates
 
 // ════════════════════════════════════════════════════════════════
-// SHAREPOINT REST HELPERS
+// GITHUB API HELPERS
 // ════════════════════════════════════════════════════════════════
-async function spDigest() {
-  const r = await fetch(`${SP_SITE}/_api/contextinfo`, {
-    method: "POST", credentials: "include",
-    headers: { "Accept": "application/json;odata=verbose", "Content-Type": "application/json" }
+async function ghLoad() {
+  const token = ghToken();
+  if (!token) return null;
+  const r = await fetch(`${GH_API}?ref=${GH_BRANCH}&t=${Date.now()}`, {
+    headers: {
+      "Authorization": `token ${token}`,
+      "Accept": "application/vnd.github.v3+json"
+    }
   });
+  if (!r.ok) throw new Error(`GitHub load failed: ${r.status}`);
   const d = await r.json();
-  return d.d.GetContextWebInformation.FormDigestValue;
+  ghFileSha = d.sha;
+  const decoded = JSON.parse(atob(d.content.replace(/\n/g, "")));
+  return decoded;
 }
 
-async function spGet(url) {
-  const r = await fetch(url, {
-    credentials: "include",
-    headers: { "Accept": "application/json;odata=verbose" }
-  });
-  if (!r.ok) throw new Error(`SP GET ${r.status}`);
-  return r.json();
-}
-
-async function spWrite(url, body, method) {
-  const digest = await spDigest();
-  const headers = {
-    "Accept":         "application/json;odata=verbose",
-    "Content-Type":   "application/json;odata=verbose",
-    "X-RequestDigest": digest
+async function ghSave(data) {
+  const token = ghToken();
+  if (!token) { saveState(); return; }
+  const body = {
+    message: `Dashboard update ${new Date().toISOString()}`,
+    content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
+    branch:  GH_BRANCH
   };
-  if (method) { headers["X-HTTP-Method"] = method; headers["If-Match"] = "*"; }
-  const r = await fetch(url, {
-    method: "POST", credentials: "include",
-    headers, body: JSON.stringify(body)
+  if (ghFileSha) body.sha = ghFileSha;
+  const r = await fetch(GH_API, {
+    method: "PUT",
+    headers: {
+      "Authorization": `token ${token}`,
+      "Accept": "application/vnd.github.v3+json",
+      "Content-Type": "application/json"
+    },
+    body: JSON.stringify(body)
   });
-  if (!r.ok && r.status !== 204) throw new Error(`SP write ${r.status}`);
-  return method ? null : r.json();
+  if (!r.ok) throw new Error(`GitHub save failed: ${r.status}`);
+  const d = await r.json();
+  ghFileSha = d.content.sha;
 }
 
-function spItemBody(taskId) {
-  const s  = taskState[taskId] || {};
-  const ov = taskOverrides[taskId] || {};
+function buildGhData() {
   return {
-    "__metadata":           { "type": SP_TYPE },
-    "TaskStatus":           s.status      || "",
-    "TaskComment":          s.comment     || "",
-    "ManualBlock":          !!s.manualBlock,
-    "StartedAt":            s.startedAt   || "",
-    "CompletedAt":          s.completedAt || "",
-    "BlockedAt":            s.blockedAt   || "",
-    "OwnerOverride":        ov.owner       || "",
-    "ReadyWhenOverride":    ov.readyWhen   || "",
-    "DueByOverride":        ov.dueBy       || "",
-    "FileFormatOverride":   ov.fileFormat  || "",
-    "InstructionsOverride": ov.instructions ? JSON.stringify(ov.instructions) : ""
+    lastUpdated: new Date().toISOString(),
+    taskState:    taskState,
+    taskOverrides:taskOverrides,
+    emailMap:     emailMap,
+    distroConfig: distroConfig,
+    selectedTZ:   selectedTZ
   };
 }
 
-async function spCreateItem(taskId) {
-  const body = { ...spItemBody(taskId), "Title": String(taskId) };
-  const d    = await spWrite(`${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items`, body);
-  spItemMap[taskId] = d.d.Id;
+function applyGhData(data) {
+  if (data.taskState)     taskState     = data.taskState;
+  if (data.taskOverrides) taskOverrides = data.taskOverrides;
+  if (data.emailMap)      emailMap      = data.emailMap;
+  if (data.distroConfig)  distroConfig  = data.distroConfig;
+  if (data.selectedTZ)    selectedTZ    = data.selectedTZ;
+  TASK_DEFINITIONS.forEach(t => {
+    if (!taskState[t.id]) taskState[t.id] = { status: "notready", comment: "", manualBlock: false, startedAt: null, completedAt: null, blockedAt: null };
+  });
 }
 
-async function spUpdateItem(taskId) {
-  if (!spItemMap[taskId]) { await spCreateItem(taskId); return; }
-  await spWrite(
-    `${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items(${spItemMap[taskId]})`,
-    spItemBody(taskId), "MERGE"
-  );
+// Called after every state change — saves to GitHub + localStorage
+async function persistTask(taskId) {
+  localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState));
+  localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides));
+  if (ghToken()) {
+    try {
+      await ghSave(buildGhData());
+    } catch(e) {
+      showToast("⚠️ GitHub save failed: " + e.message);
+    }
+  }
 }
 
-// Called after every state change — updates localStorage instantly, SP in background
-function persistTask(taskId) {
-  localStorage.setItem(STORAGE_KEY,   JSON.stringify(taskState));
-  localStorage.setItem(OVERRIDE_KEY,  JSON.stringify(taskOverrides));
-  if (IS_SHAREPOINT) spUpdateItem(taskId).catch(() => showToast("⚠️ SharePoint save failed — check connection."));
-}
-
-// Polls SP every 30 s so all users see live updates
-async function spRefresh() {
+// Poll GitHub every 30s for live multi-user updates
+async function ghRefresh() {
+  if (!ghToken()) return;
   try {
-    const cols = "Id,Title,TaskStatus,TaskComment,ManualBlock,StartedAt,CompletedAt,BlockedAt,OwnerOverride,ReadyWhenOverride,DueByOverride,FileFormatOverride,InstructionsOverride";
-    const d    = await spGet(`${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items?$top=100&$select=${cols}`);
-    d.d.results.forEach(item => {
-      const id = parseInt(item.Title);
-      if (!id) return;
-      spItemMap[id]  = item.Id;
-      taskState[id]  = {
-        status:      item.TaskStatus   || STATUS.NOT_READY,
-        comment:     item.TaskComment  || "",
-        manualBlock: item.ManualBlock  || false,
-        startedAt:   item.StartedAt    || null,
-        completedAt: item.CompletedAt  || null,
-        blockedAt:   item.BlockedAt    || null
-      };
-      if (!taskOverrides[id]) taskOverrides[id] = {};
-      if (item.OwnerOverride)        taskOverrides[id].owner        = item.OwnerOverride;
-      if (item.ReadyWhenOverride)    taskOverrides[id].readyWhen    = item.ReadyWhenOverride;
-      if (item.DueByOverride)        taskOverrides[id].dueBy        = item.DueByOverride;
-      if (item.FileFormatOverride)   taskOverrides[id].fileFormat   = item.FileFormatOverride;
-      if (item.InstructionsOverride) { try { taskOverrides[id].instructions = JSON.parse(item.InstructionsOverride); } catch(e) {} }
-    });
-    render();
-  } catch(e) { console.warn("SP refresh failed:", e); }
+    const data = await ghLoad();
+    if (data) { applyGhData(data); render(); }
+  } catch(e) { console.warn("GitHub refresh failed:", e); }
 }
 
 // Loading overlay
-function spLoading(show) {
-  let el = document.getElementById("sp-loading");
+function ghLoading(show) {
+  let el = document.getElementById("gh-loading");
   if (!el) {
     el = document.createElement("div");
-    el.id = "sp-loading";
+    el.id = "gh-loading";
     el.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;display:flex;align-items:center;justify-content:center";
     el.innerHTML = `<div style="background:#fff;padding:30px 40px;border-radius:12px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-      <div style="font-size:16px;font-weight:700;color:#00674B;margin-bottom:6px">Connecting to SharePoint…</div>
-      <div style="font-size:12px;color:#64748b">Loading live task state</div>
+      <div style="font-size:16px;font-weight:700;color:#00674B;margin-bottom:6px">Connecting to GitHub…</div>
+      <div style="font-size:12px;color:#64748b">Loading live task state from data.json</div>
     </div>`;
     document.body.appendChild(el);
   }
   el.style.display = show ? "flex" : "none";
 }
-
-const STORAGE_KEY   = "fcast_state_v3";
-const EMAIL_KEY     = "fcast_emails_v3";
-const NOTIFIED_KEY  = "fcast_notified_v2";
-const OVERRIDE_KEY  = "fcast_overrides_v1";
-const DISTRO_KEY    = "fcast_distro_v1";
-const TZ_KEY        = "fcast_tz_v1";
-
-const STATUS = { NOT_READY:"notready", READY:"ready", IN_PROGRESS:"inprogress", COMPLETE:"complete", BLOCKED:"blocked" };
-
-const STATUS_META = {
-  notready:   ["Not Ready",   "badge-notready",   "status-notready"],
-  ready:      ["Ready",       "badge-ready",      "status-ready"],
-  inprogress: ["In Progress", "badge-inprogress",  "status-inprogress"],
-  complete:   ["Complete",    "badge-complete",    "status-complete"],
-  blocked:    ["Blocked",     "badge-blocked",     "status-blocked"],
-};
-
-const DEFAULT_EMAILS = {
-  "Eric":            "",
-  "Nazia":           "",
-  "Anju/Billy":      "",
-  "Store Leadership":"",
-  "Khalid/Sched":    "",
-  "Automated":       ""
-};
 
 // ════════════════════════════════════════════════════════════════
 // STATE
@@ -1567,9 +1538,10 @@ function buildSettingsUI() {
       <label>${esc(o)}</label>
       <input type="email" id="em-${esc(o)}" value="${esc(emailMap[o]||"")}" placeholder="${o.toLowerCase().replace(/\//g,".")}@company.com">
     </div>`).join("");
-  document.getElementById("input-distro").value  = distroConfig.distroEmail || "";
-  document.getElementById("input-sponsor").value = distroConfig.sponsorEmail || "";
-  document.getElementById("input-tz").value       = selectedTZ || "America/Chicago";
+  document.getElementById("input-distro").value    = distroConfig.distroEmail || "";
+  document.getElementById("input-sponsor").value   = distroConfig.sponsorEmail || "";
+  document.getElementById("input-tz").value         = selectedTZ || "America/Chicago";
+  document.getElementById("input-gh-token").value  = ghToken() || "";
 }
 
 document.getElementById("btn-save-settings").onclick = () => {
@@ -1581,11 +1553,18 @@ document.getElementById("btn-save-settings").onclick = () => {
   distroConfig.distroEmail  = document.getElementById("input-distro").value.trim();
   distroConfig.sponsorEmail = document.getElementById("input-sponsor").value.trim();
   selectedTZ = document.getElementById("input-tz").value;
+  const newToken = document.getElementById("input-gh-token").value.trim();
+  if (newToken) localStorage.setItem("fcast_gh_token", newToken);
+  else localStorage.removeItem("fcast_gh_token");
   saveEmails(); saveDistro(); saveTZ();
   document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
   document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
   showToast("Settings saved.");
   document.getElementById("settings-panel").classList.remove("open");
+  // If token was just set, sync to GitHub immediately
+  if (newToken) {
+    ghSave(buildGhData()).then(() => showToast("✅ Synced to GitHub.")).catch(e => showToast("⚠️ GitHub sync failed: " + e.message));
+  }
   render();
 };
 
@@ -1619,57 +1598,35 @@ function esc(s) {
   document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
   document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
 
-  if (IS_SHAREPOINT) {
-    // Load emails/distro from localStorage (user-specific prefs)
-    loadAll();
-    spLoading(true);
+  loadAll();
+
+  const token = ghToken();
+  if (token) {
+    ghLoading(true);
     try {
-      const cols = "Id,Title,TaskStatus,TaskComment,ManualBlock,StartedAt,CompletedAt,BlockedAt,OwnerOverride,ReadyWhenOverride,DueByOverride,FileFormatOverride,InstructionsOverride";
-      const d    = await spGet(`${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items?$top=100&$select=${cols}`);
-      const items = d.d.results;
-
-      // Map existing SP items into state
-      items.forEach(item => {
-        const id = parseInt(item.Title);
-        if (!id) return;
-        spItemMap[id] = item.Id;
-        taskState[id] = {
-          status:      item.TaskStatus   || STATUS.NOT_READY,
-          comment:     item.TaskComment  || "",
-          manualBlock: item.ManualBlock  || false,
-          startedAt:   item.StartedAt    || null,
-          completedAt: item.CompletedAt  || null,
-          blockedAt:   item.BlockedAt    || null
-        };
-        if (!taskOverrides[id]) taskOverrides[id] = {};
-        if (item.OwnerOverride)        taskOverrides[id].owner        = item.OwnerOverride;
-        if (item.ReadyWhenOverride)    taskOverrides[id].readyWhen    = item.ReadyWhenOverride;
-        if (item.DueByOverride)        taskOverrides[id].dueBy        = item.DueByOverride;
-        if (item.FileFormatOverride)   taskOverrides[id].fileFormat   = item.FileFormatOverride;
-        if (item.InstructionsOverride) { try { taskOverrides[id].instructions = JSON.parse(item.InstructionsOverride); } catch(e) {} }
-      });
-
-      // Create SP rows for any tasks not yet in the list
-      for (const t of TASK_DEFINITIONS) {
-        if (!spItemMap[t.id]) {
-          taskState[t.id] = { status: STATUS.NOT_READY, comment: "", manualBlock: false, startedAt: null, completedAt: null, blockedAt: null };
-          await spCreateItem(t.id);
-        }
+      const data = await ghLoad();
+      if (data) {
+        applyGhData(data);
+        // Sync localStorage
+        localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState));
+        localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides));
+        localStorage.setItem(EMAIL_KEY,    JSON.stringify(emailMap));
+        localStorage.setItem(DISTRO_KEY,   JSON.stringify(distroConfig));
+        localStorage.setItem(TZ_KEY,       selectedTZ);
       }
-
-      // Poll for live updates every 30 seconds
-      setInterval(spRefresh, 30000);
-      showToast("Connected to SharePoint — live sync active.");
-
+      // Update week label with loaded TZ
+      document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
+      document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
+      // Poll every 30s for live multi-user updates
+      setInterval(ghRefresh, 30000);
+      showToast("✅ Connected to GitHub — live sync active.");
     } catch(e) {
-      console.error("SP init error:", e);
-      showToast("⚠️ Could not reach SharePoint list. Check the list exists and you have access.");
+      console.error("GitHub init error:", e);
+      showToast("⚠️ Could not load from GitHub: " + e.message + ". Using local data.");
     }
-    spLoading(false);
-
+    ghLoading(false);
   } else {
-    // Local / offline mode — use localStorage only
-    loadAll();
+    showToast("ℹ️ No GitHub token set. Go to Settings to enable live sync.");
   }
 
   render();
