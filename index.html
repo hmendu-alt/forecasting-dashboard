@@ -729,7 +729,7 @@ const GH_FILE   = "data.json";
 const GH_BRANCH = "main";
 const GH_API    = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`;
 
-// Token stored in localStorage — set via Settings panel
+// Token stored in localStorage — enter via Settings panel on first use
 function ghToken() { return localStorage.getItem("fcast_gh_token") || ""; }
 
 let ghFileSha = null; // current file SHA — required for PUT updates
@@ -1116,6 +1116,20 @@ function saveEmailInline(taskId, owner) {
 function render() {
   recomputeAll();
   checkAndNotify();
+
+  // Show/hide setup banner
+  let banner = document.getElementById("setup-banner");
+  if (!ghToken()) {
+    if (!banner) {
+      banner = document.createElement("div");
+      banner.id = "setup-banner";
+      banner.style.cssText = "background:#fffbeb;border:1px solid #f59e0b;border-left:4px solid #f59e0b;padding:12px 20px;font-size:13px;color:#78350f;display:flex;align-items:center;justify-content:space-between;gap:12px";
+      banner.innerHTML = `<span>⚠️ <strong>Setup required:</strong> Click Settings and enter your GitHub Personal Access Token to enable live sync across all users.</span><button onclick="document.getElementById('btn-settings').click()" style="background:#f59e0b;color:#fff;border:none;border-radius:5px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap">Open Settings →</button>`;
+      document.getElementById("progress-wrap").before(banner);
+    }
+  } else {
+    if (banner) banner.remove();
+  }
 
   const tbody = document.getElementById("task-tbody");
   tbody.innerHTML = "";
@@ -1599,10 +1613,11 @@ function esc(s) {
   document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
 
   loadAll();
+  render(); // Show tasks immediately from local state
 
   const token = ghToken();
   if (token) {
-    ghLoading(true);
+    showToast("🔄 Syncing with GitHub...");
     try {
       const data = await ghLoad();
       if (data) {
@@ -1620,16 +1635,14 @@ function esc(s) {
       // Poll every 30s for live multi-user updates
       setInterval(ghRefresh, 30000);
       showToast("✅ Connected to GitHub — live sync active.");
+      render(); // Re-render with GitHub data
     } catch(e) {
       console.error("GitHub init error:", e);
-      showToast("⚠️ Could not load from GitHub: " + e.message + ". Using local data.");
+      showToast("⚠️ GitHub sync failed: " + e.message + ". Showing local data.");
     }
-    ghLoading(false);
   } else {
-    showToast("ℹ️ No GitHub token set. Go to Settings to enable live sync.");
+    showToast("ℹ️ No GitHub token — enter one in Settings to enable live sync.");
   }
-
-  render();
 })();
 </script>
 </body>
