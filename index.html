@@ -810,21 +810,21 @@ const TASK_DEFINITIONS = [
 // CONSTANTS & STORAGE KEYS
 // ════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════
-// SYNC — raw.githubusercontent.com (read) + GitHub API (write)
+// SYNC — github.io (read, no auth) + GitHub API (write, token needed)
 // ════════════════════════════════════════════════════════════════
 const GH_OWNER  = "hmendu-alt";
 const GH_REPO   = "forecasting-dashboard";
 const GH_FILE   = "data.json";
 const GH_BRANCH = "main";
-const GH_RAW    = `https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${GH_BRANCH}/${GH_FILE}`;
+const GH_RAW    = `https://${GH_OWNER}.github.io/${GH_REPO}/${GH_FILE}`;
 const GH_API    = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`;
 
 function ghToken() { return localStorage.getItem("fcast_gh_token") || ""; }
 let ghFileSha = null;
 
-// READ via raw.githubusercontent.com — no auth, no CORS issues
+// READ via github.io Pages URL — same domain, no auth, no CORS issues
 async function ghLoad() {
-  const r = await fetch(`${GH_RAW}?cb=${Date.now()}`);
+  const r = await fetch(`${GH_RAW}?cb=${Date.now()}`, { cache: "no-store" });
   if (!r.ok) throw new Error(`Load failed: ${r.status}`);
   return r.json();
 }
