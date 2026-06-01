@@ -1,0 +1,1679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Weekly Forecasting Dashboard</title>
+<style>
+  :root {
+    --wf-green:         #00674B;
+    --wf-green-bright:  #00A651;
+    --wf-green-light:   #F0FAF5;
+    --wf-green-mid:     #D0EEE0;
+    --color-complete:   #F0FAF5;
+    --color-ready:      #FFFBEB;
+    --color-blocked:    #FEF2F2;
+    --color-notready:   #F8FAFC;
+    --color-inprogress: #EFF6FF;
+    --border-complete:  #00A651;
+    --border-ready:     #F59E0B;
+    --border-blocked:   #EF4444;
+    --border-notready:  #CBD5E1;
+    --border-inprogress:#3B82F6;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; background: #F4F6F4; color: #1a1a1a; }
+
+  /* ── Header ── */
+  #header { background: var(--wf-green); color: #fff; padding: 16px 24px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-bottom: 4px solid var(--wf-green-bright); }
+  #header-left h1 { font-size: 19px; font-weight: 700; letter-spacing: .2px; }
+  #week-label { font-size: 12px; opacity: .8; margin-top: 3px; }
+  #summary-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .stat-pill { background: rgba(255,255,255,.15); border-radius: 20px; padding: 4px 13px; font-size: 12px; white-space: nowrap; border: 1px solid rgba(255,255,255,.25); }
+  .stat-pill span { font-weight: 700; }
+  .hdr-btn { border-radius: 6px; padding: 7px 14px; cursor: pointer; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,.4); background: rgba(255,255,255,.12); color: #fff; transition: background .15s; white-space: nowrap; }
+  .hdr-btn:hover { background: rgba(255,255,255,.25); }
+  .hdr-btn.danger { background: #ef4444; border-color: #dc2626; }
+  .hdr-btn.danger:hover { background: #dc2626; }
+
+  /* ── Progress ── */
+  #progress-wrap { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 10px 24px; display: flex; align-items: center; gap: 14px; }
+  #progress-track { flex: 1; height: 9px; background: #e2e8f0; border-radius: 99px; overflow: hidden; }
+  #progress-fill { height: 100%; background: linear-gradient(90deg, var(--wf-green), var(--wf-green-bright)); border-radius: 99px; transition: width .4s ease; }
+  #progress-label { font-size: 12px; color: #64748b; min-width: 140px; text-align: right; }
+
+  /* ── Legend ── */
+  #legend { background: #fff; border-bottom: 1px solid #e2e8f0; padding: 8px 24px; display: flex; gap: 18px; flex-wrap: wrap; align-items: center; }
+  .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #64748b; }
+  .ld { width: 11px; height: 11px; border-radius: 3px; border: 2px solid transparent; }
+  .ld-complete   { background: var(--color-complete);   border-color: var(--border-complete); }
+  .ld-inprogress { background: var(--color-inprogress); border-color: var(--border-inprogress); }
+  .ld-ready      { background: var(--color-ready);      border-color: var(--border-ready); }
+  .ld-blocked    { background: var(--color-blocked);    border-color: var(--border-blocked); }
+  .ld-notready   { background: var(--color-notready);   border-color: var(--border-notready); }
+
+  /* ── Settings Panel ── */
+  #settings-panel { display: none; background: #fff; border-bottom: 2px solid var(--wf-green-mid); padding: 20px 24px; }
+  #settings-panel.open { display: block; }
+  #settings-panel h3 { font-size: 14px; font-weight: 700; color: var(--wf-green); margin-bottom: 4px; }
+  #settings-panel p { font-size: 12px; color: #64748b; margin-bottom: 14px; }
+  .settings-section { margin-bottom: 18px; }
+  .settings-section h4 { font-size: 12px; font-weight: 700; color: #475569; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 10px; border-bottom: 1px solid #e2e8f0; padding-bottom: 5px; }
+  .settings-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px; margin-bottom: 6px; }
+  .settings-field label { font-size: 11px; font-weight: 600; color: #64748b; display: block; margin-bottom: 3px; }
+  .settings-field input { width: 100%; border: 1px solid #cbd5e1; border-radius: 5px; padding: 6px 9px; font-size: 13px; }
+  .distro-row { display: flex; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  .distro-field { flex: 1; min-width: 220px; }
+  .distro-field label { font-size: 11px; font-weight: 600; color: #64748b; display: block; margin-bottom: 3px; }
+  .distro-field input { width: 100%; border: 1px solid #cbd5e1; border-radius: 5px; padding: 6px 9px; font-size: 13px; }
+  #btn-save-settings { background: var(--wf-green); color: #fff; border: none; border-radius: 6px; padding: 8px 18px; cursor: pointer; font-size: 13px; font-weight: 600; }
+
+  /* ── Table ── */
+  #table-wrap { padding: 18px 24px; overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+  thead th { background: var(--wf-green); color: #fff; padding: 10px 11px; text-align: left; font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; white-space: nowrap; }
+  tbody tr { border-bottom: 1px solid #e8f0e8; transition: opacity .15s; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr.status-complete   { background: var(--color-complete);   border-left: 4px solid var(--border-complete); }
+  tbody tr.status-inprogress { background: var(--color-inprogress); border-left: 4px solid var(--border-inprogress); }
+  tbody tr.status-ready      { background: var(--color-ready);      border-left: 4px solid var(--border-ready); }
+  tbody tr.status-blocked    { background: var(--color-blocked);    border-left: 4px solid var(--border-blocked); }
+  tbody tr.status-notready   { background: var(--color-notready);   border-left: 4px solid var(--border-notready); opacity: .72; }
+  td { padding: 9px 11px; vertical-align: top; }
+  td.step-num { font-weight: 700; color: #64748b; width: 36px; text-align: center; font-size: 13px; }
+  td.task-name { min-width: 170px; }
+  .task-title { font-weight: 600; font-size: 13px; }
+  .task-name-link { cursor: pointer; color: var(--wf-green); text-decoration: underline; text-decoration-style: dotted; text-underline-offset: 3px; }
+  .task-name-link:hover { text-decoration-style: solid; }
+  .task-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
+  .task-ts { font-size: 10px; color: #94a3b8; margin-top: 3px; font-style: italic; }
+  td.owner-cell { min-width: 110px; }
+  td.time-cell  { min-width: 130px; font-size: 12px; }
+  td.deps-cell  { font-size: 12px; }
+  .dep-tag { display: inline-block; background: #e2e8f0; border-radius: 4px; padding: 1px 6px; margin: 1px 2px; font-size: 11px; }
+
+  /* editable field */
+  .field-wrap { display: flex; align-items: flex-start; gap: 4px; }
+  .field-val { flex: 1; font-size: 12px; }
+  .btn-pencil { background: none; border: none; cursor: pointer; font-size: 11px; color: #94a3b8; padding: 0 2px; line-height: 1; }
+  .btn-pencil:hover { color: var(--wf-green); }
+  .inline-edit-wrap { display: flex; flex-direction: column; gap: 4px; }
+  .inline-edit-input { border: 1px solid var(--wf-green); border-radius: 4px; padding: 4px 7px; font-size: 12px; width: 100%; min-width: 100px; }
+  .inline-edit-actions { display: flex; gap: 4px; }
+  .btn-ie-save   { background: var(--wf-green); color: #fff; border: none; border-radius: 4px; padding: 3px 9px; font-size: 11px; font-weight: 600; cursor: pointer; }
+  .btn-ie-cancel { background: #e2e8f0; color: #475569; border: none; border-radius: 4px; padding: 3px 9px; font-size: 11px; cursor: pointer; }
+
+  /* status badge */
+  td.status-cell { white-space: nowrap; }
+  .status-badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 600; border: 1px solid transparent; }
+  .badge-complete   { background: var(--wf-green-mid); color: var(--wf-green); border-color: var(--wf-green-bright); }
+  .badge-inprogress { background: #dbeafe; color: #1e40af; border-color: #93c5fd; }
+  .badge-ready      { background: #fef9c3; color: #78350f; border-color: #fcd34d; }
+  .badge-blocked    { background: #fee2e2; color: #991b1b; border-color: #fca5a5; }
+  .badge-notready   { background: #f1f5f9; color: #94a3b8; border-color: #e2e8f0; }
+
+  /* action buttons */
+  td.actions { white-space: nowrap; min-width: 160px; }
+  .btn { border: none; border-radius: 5px; padding: 5px 10px; cursor: pointer; font-size: 11px; font-weight: 600; margin-right: 3px; margin-bottom: 3px; display: inline-block; transition: opacity .15s; }
+  .btn:hover { opacity: .82; }
+  .btn:disabled { opacity: .32; cursor: default; }
+  .btn-complete  { background: var(--wf-green-bright); color: #fff; }
+  .btn-progress  { background: #3b82f6; color: #fff; }
+  .btn-block     { background: #ef4444; color: #fff; }
+  .btn-undo      { background: #6b7280; color: #fff; }
+  .btn-email     { background: #8b5cf6; color: #fff; }
+  .btn-guide     { background: var(--wf-green); color: #fff; }
+
+  /* comment cell */
+  td.comment-cell { font-size: 12px; color: #475569; min-width: 150px; }
+  .comment-text { font-style: italic; margin-bottom: 4px; color: #475569; }
+  .edit-comment-input { width: 100%; border: 1px solid #cbd5e1; border-radius: 4px; padding: 4px 7px; font-size: 12px; font-family: inherit; resize: vertical; min-height: 38px; }
+  .btn-save-comment { background: #475569; color: #fff; border: none; border-radius: 5px; padding: 4px 11px; font-size: 11px; font-weight: 500; letter-spacing: .2px; cursor: pointer; margin-top: 3px; }
+  .btn-save-comment:hover { background: #334155; }
+
+  /* ── Modals ── */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; align-items: center; justify-content: center; padding: 16px; }
+  .modal-overlay.open { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 26px; max-width: 540px; width: 100%; box-shadow: 0 20px 60px rgba(0,0,0,.2); max-height: 90vh; overflow-y: auto; }
+  .modal-wide { max-width: 680px; }
+  .modal h2 { font-size: 17px; font-weight: 700; color: var(--wf-green); margin-bottom: 6px; }
+  .modal-subtitle { font-size: 13px; font-weight: 600; color: #1e293b; margin-bottom: 12px; }
+  .modal-section { margin-bottom: 16px; }
+  .modal-section h4 { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #64748b; margin-bottom: 8px; border-bottom: 1px solid #e2e8f0; padding-bottom: 4px; }
+  .modal label { font-size: 12px; font-weight: 600; display: block; margin-bottom: 4px; color: #334155; }
+  .modal input, .modal textarea { width: 100%; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; margin-bottom: 4px; }
+  .modal textarea { resize: vertical; }
+  .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .btn-primary   { background: var(--wf-green); color: #fff; border-radius: 6px; padding: 8px 18px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn-primary:hover { background: #005a40; }
+  .btn-secondary { background: #e2e8f0; color: #1e293b; border-radius: 6px; padding: 8px 18px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn-secondary:hover { background: #cbd5e1; }
+  .btn-danger    { background: #ef4444; color: #fff; border-radius: 6px; padding: 8px 18px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+  .btn-danger:hover { background: #dc2626; }
+  .btn-purple    { background: #8b5cf6; color: #fff; border-radius: 6px; padding: 8px 18px; border: none; cursor: pointer; font-size: 13px; font-weight: 600; }
+
+  /* instructions list */
+  .instr-list { list-style: none; padding: 0; }
+  .instr-list li { display: flex; gap: 10px; padding: 7px 0; border-bottom: 1px solid #f1f5f9; font-size: 13px; line-height: 1.5; }
+  .instr-list li:last-child { border-bottom: none; }
+  .instr-num { background: var(--wf-green); color: #fff; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; flex-shrink: 0; margin-top: 1px; }
+  .instr-link { display: inline-block; margin-top: 3px; font-size: 11px; color: var(--wf-green-bright); text-decoration: underline; }
+
+  /* file info box */
+  .file-info-box { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 7px; padding: 11px 14px; margin-bottom: 14px; }
+  .file-info-box .fi-row { display: flex; gap: 8px; font-size: 12px; margin-bottom: 5px; align-items: flex-start; }
+  .file-info-box .fi-row:last-child { margin-bottom: 0; }
+  .fi-label { font-weight: 700; color: #475569; min-width: 90px; flex-shrink: 0; }
+  .fi-val { color: #1e293b; word-break: break-all; }
+  .fi-warning { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 5px; padding: 6px 10px; font-size: 11px; color: #78350f; margin-top: 8px; }
+
+  /* guide edit */
+  .guide-step-edit { display:flex; gap:8px; align-items:flex-start; margin-bottom:10px; }
+  .guide-step-edit .step-num-edit { background:var(--wf-green); color:#fff; border-radius:50%; width:22px; height:22px; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; flex-shrink:0; margin-top:6px; }
+  .guide-step-edit .step-fields { flex:1; display:flex; flex-direction:column; gap:4px; }
+  .guide-step-edit textarea { border:1px solid #cbd5e1; border-radius:5px; padding:6px 8px; font-size:12px; font-family:inherit; resize:vertical; min-height:52px; width:100%; }
+  .guide-step-edit input  { border:1px solid #cbd5e1; border-radius:5px; padding:5px 8px; font-size:12px; width:100%; }
+  .guide-step-edit .btn-remove-step { background:#fee2e2; color:#ef4444; border:1px solid #fca5a5; border-radius:4px; padding:3px 8px; font-size:11px; cursor:pointer; margin-top:4px; align-self:flex-start; }
+
+  /* report modal */
+  .report-pre { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 7px; padding: 14px; font-family: "Courier New", monospace; font-size: 11px; line-height: 1.6; white-space: pre-wrap; max-height: 320px; overflow-y: auto; color: #1e293b; }
+
+  /* toast */
+  #toast-container { position: fixed; bottom: 24px; right: 24px; z-index: 200; display: flex; flex-direction: column; gap: 8px; }
+  .toast { background: #1e293b; color: #fff; padding: 11px 16px; border-radius: 8px; font-size: 13px; box-shadow: 0 4px 16px rgba(0,0,0,.2); max-width: 340px; animation: slideIn .2s ease; }
+  @keyframes slideIn { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  @media (max-width: 900px) { #table-wrap { padding: 10px 8px; } td, th { padding: 7px 7px; } }
+</style>
+</head>
+<body>
+
+<!-- ══ HEADER ══ -->
+<div id="header">
+  <div id="header-left">
+    <h1>Weekly Forecasting Dashboard</h1>
+    <div id="week-label">Loading&hellip;</div>
+  </div>
+  <div id="summary-bar">
+    <div class="stat-pill"><span id="n-complete">0</span> Complete</div>
+    <div class="stat-pill"><span id="n-inprog">0</span> In Progress</div>
+    <div class="stat-pill"><span id="n-ready">0</span> Ready</div>
+    <div class="stat-pill"><span id="n-blocked">0</span> Blocked</div>
+    <button class="hdr-btn" id="btn-settings">Settings</button>
+    <button class="hdr-btn danger" id="btn-reset">Reset Week</button>
+  </div>
+</div>
+
+<!-- ══ SETTINGS PANEL ══ -->
+<div id="settings-panel">
+  <h3>Dashboard Settings</h3>
+  <p>Changes are saved to your browser. Email fields open your default mail client when notifications are triggered.</p>
+
+  <div class="settings-section">
+    <h4>Owner Email Addresses</h4>
+    <p style="font-size:11px;color:#64748b;margin-bottom:8px">Emails can also be set inline by clicking the ✏ icon in the Owner Email column of the dashboard.</p>
+    <div class="settings-grid" id="settings-email-grid"></div>
+  </div>
+
+  <div class="settings-section">
+    <h4>Distribution &amp; Escalation</h4>
+    <div class="distro-row">
+      <div class="distro-field">
+        <label>Broadcast Distribution List (blocker alerts + reset report)</label>
+        <input type="email" id="input-distro" placeholder="team-distro@company.com">
+      </div>
+      <div class="distro-field">
+        <label>Project Sponsor Email (receives reset report)</label>
+        <input type="email" id="input-sponsor" placeholder="sponsor@company.com">
+      </div>
+    </div>
+  </div>
+
+
+  <div class="settings-section">
+    <h4>Time Zone</h4>
+    <div class="settings-field" style="max-width:300px">
+      <label>Dashboard Time Zone (all timestamps will use this)</label>
+      <select id="input-tz" style="width:100%;border:1px solid #cbd5e1;border-radius:5px;padding:6px 9px;font-size:13px;background:#fff">
+        <option value="America/Chicago">CST — Central Time (Chicago)</option>
+        <option value="America/New_York">EST — Eastern Time (New York)</option>
+        <option value="America/Los_Angeles">PST — Pacific Time (Los Angeles)</option>
+        <option value="America/Denver">MST — Mountain Time (Denver)</option>
+        <option value="Europe/London">GMT — London</option>
+        <option value="Europe/Paris">CET — Central European Time</option>
+        <option value="Asia/Kolkata">IST — India Standard Time</option>
+        <option value="Asia/Singapore">SGT — Singapore Time</option>
+        <option value="Australia/Sydney">AEST — Australian Eastern Time</option>
+        <option value="Asia/Dubai">GST — Gulf Standard Time</option>
+      </select>
+    </div>
+  </div>
+  <button id="btn-save-settings">Save Settings</button>
+</div>
+
+<!-- ══ PROGRESS ══ -->
+<div id="progress-wrap">
+  <div id="progress-track"><div id="progress-fill" style="width:0%"></div></div>
+  <div id="progress-label">0 of 0 tasks complete</div>
+</div>
+
+<!-- ══ LEGEND ══ -->
+<div id="legend">
+  <strong style="font-size:11px;color:#64748b">Legend:</strong>
+  <div class="legend-item"><div class="ld ld-complete"></div>Complete</div>
+  <div class="legend-item"><div class="ld ld-inprogress"></div>In Progress</div>
+  <div class="legend-item"><div class="ld ld-ready"></div>Ready</div>
+  <div class="legend-item"><div class="ld ld-blocked"></div>Blocked</div>
+  <div class="legend-item"><div class="ld ld-notready"></div>Not Yet Ready</div>
+  <span style="font-size:11px;color:#94a3b8;margin-left:8px" id="tz-legend-label">All times CST</span>
+</div>
+
+<!-- ══ TABLE ══ -->
+<div id="table-wrap">
+  <table id="task-table">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Task</th>
+        <th>Format / File Type</th>
+        <th>Owner</th>
+        <th>Owner Email</th>
+        <th>Ready When</th>
+        <th>Due By</th>
+        <th>Depends On</th>
+        <th>Status</th>
+        <th>Actions</th>
+        <th>Comments</th>
+      </tr>
+    </thead>
+    <tbody id="task-tbody"></tbody>
+  </table>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- ══════════ MODALS ══════════ -->
+
+<!-- Guide / Instructions -->
+<div class="modal-overlay" id="modal-guide">
+  <div class="modal modal-wide">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px">
+      <h2 style="margin-bottom:0">Step-by-Step Guide</h2>
+      <button class="btn-secondary" id="btn-guide-edit-toggle" style="font-size:12px;padding:5px 12px" onclick="toggleGuideEdit()">Edit Guide</button>
+    </div>
+    <div class="modal-subtitle" id="guide-task-name"></div>
+    <div id="guide-file-info"></div>
+    <div class="modal-section" id="guide-steps-section">
+      <h4>Instructions</h4>
+      <ul class="instr-list" id="guide-steps"></ul>
+    </div>
+    <div class="modal-section" id="guide-edit-section" style="display:none">
+      <h4>Edit Instructions</h4>
+      <div id="guide-edit-steps"></div>
+      <button class="btn-secondary" style="font-size:12px;margin-top:8px" onclick="addGuideStep()">+ Add Step</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-guide')">Close</button>
+      <button class="btn-primary" id="btn-save-guide" style="display:none" onclick="saveGuideEdits()">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Start / In Progress -->
+<div class="modal-overlay" id="modal-start">
+  <div class="modal modal-wide">
+    <h2>Start Task</h2>
+    <div class="modal-subtitle" id="start-task-name"></div>
+    <div id="start-file-info"></div>
+    <div class="modal-section">
+      <h4>Instructions — review before starting</h4>
+      <ul class="instr-list" id="start-steps"></ul>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-start')">Cancel</button>
+      <button class="btn-primary" id="btn-confirm-start">Mark as In Progress</button>
+    </div>
+  </div>
+</div>
+
+<!-- Complete -->
+<div class="modal-overlay" id="modal-complete">
+  <div class="modal modal-wide">
+    <h2>Mark Task Complete</h2>
+    <div class="modal-subtitle" id="complete-task-name"></div>
+    <div id="complete-file-info"></div>
+    <div class="modal-section">
+      <h4>Checklist — confirm each step was completed</h4>
+      <ul class="instr-list" id="complete-steps"></ul>
+    </div>
+    <div class="modal-section">
+      <label for="complete-comment">Completion notes (optional — file location, issues encountered, etc.):</label>
+      <textarea id="complete-comment" rows="3" placeholder="e.g. File saved to \\server\forecasting\volume\volume_forecast_wk21.xlsx — no issues."></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-complete')">Cancel</button>
+      <button class="btn-primary" id="btn-confirm-complete">Confirm Complete</button>
+    </div>
+  </div>
+</div>
+
+<!-- Block -->
+<div class="modal-overlay" id="modal-block">
+  <div class="modal">
+    <h2>Mark Task Blocked</h2>
+    <div class="modal-subtitle" id="block-task-name"></div>
+    <div class="modal-section">
+      <label for="block-comment">Reason for block <strong>(required)</strong>:</label>
+      <textarea id="block-comment" rows="3" placeholder="Describe what is blocking this task and what is needed to resolve it…"></textarea>
+    </div>
+    <p style="font-size:12px;color:#64748b;margin-bottom:4px">An escalation email will be sent to the distribution list when you confirm.</p>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-block')">Cancel</button>
+      <button class="btn-danger" id="btn-confirm-block">Confirm Blocked &amp; Escalate</button>
+    </div>
+  </div>
+</div>
+
+<!-- Unblock confirm -->
+<div class="modal-overlay" id="modal-unblock">
+  <div class="modal">
+    <h2>Unblock Task</h2>
+    <div class="modal-subtitle" id="unblock-task-name"></div>
+    <div class="modal-section">
+      <label for="unblock-comment">Resolution note (required):</label>
+      <textarea id="unblock-comment" rows="3" placeholder="Describe how the block was resolved…"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-unblock')">Cancel</button>
+      <button class="btn-primary" id="btn-confirm-unblock">Unblock Task</button>
+    </div>
+  </div>
+</div>
+
+<!-- Reset confirm -->
+<div class="modal-overlay" id="modal-reset">
+  <div class="modal">
+    <h2>Reset Week</h2>
+    <p style="font-size:13px;color:#475569;margin-bottom:16px;line-height:1.6">Before resetting, a full summary report will be generated and emailed to the distribution list and project sponsor. All statuses, timestamps, and comments will then be cleared.</p>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-reset')">Cancel</button>
+      <button class="btn-primary"   id="btn-preview-report">Preview &amp; Send Report</button>
+    </div>
+  </div>
+</div>
+
+<!-- Report preview -->
+<div class="modal-overlay" id="modal-report">
+  <div class="modal modal-wide">
+    <h2>Weekly Run Summary Report</h2>
+    <p style="font-size:12px;color:#64748b;margin-bottom:12px">Review the report below, then send it to the team before resetting.</p>
+    <pre class="report-pre" id="report-content"></pre>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-report')">Back</button>
+      <button class="btn-primary"   id="btn-copy-report">Copy to Clipboard</button>
+      <button class="btn-purple"    id="btn-email-report">Email Report</button>
+      <button class="btn-danger"    id="btn-confirm-reset">Reset Dashboard</button>
+    </div>
+  </div>
+</div>
+
+<!-- Email notify modal -->
+<div class="modal-overlay" id="modal-email">
+  <div class="modal">
+    <h2>Send Notification Email</h2>
+    <pre style="font-size:12px;color:#475569;line-height:1.7;white-space:pre-wrap;background:#f8fafc;border:1px solid #e2e8f0;border-radius:7px;padding:12px;margin-bottom:4px" id="modal-email-body"></pre>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-email')">Cancel</button>
+      <button class="btn-primary"   id="btn-send-email">Open in Email Client</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// TASK DEFINITIONS
+// ════════════════════════════════════════════════════════════════
+const TASK_DEFINITIONS = [
+  {
+    id: 1,
+    name: "Automated Scheduling Process",
+    owner: "Automated",
+    fileRef: "Integration",
+    filePath: "N/A — System-generated, no manual file required",
+    fileFormat: "N/A",
+    readyWhen: "Sunday 11:00 PM CST",
+    dueBy:     "Sunday 11:59 PM CST",
+    deps: [],
+    instructions: [
+      { step: "Verify the automated scheduling process triggered in the integration system at 11:00 PM CST.", link: "" },
+      { step: "Review the integration run log for a successful completion status.", link: "" },
+      { step: "If the process did not trigger or failed, immediately escalate to the integration team.", link: "" },
+      { step: "Mark Complete once the system log confirms a successful run.", link: "" }
+    ]
+  },
+  {
+    id: 2,
+    name: "Occurrence Ratio",
+    owner: "Eric",
+    fileRef: "Batch Process",
+    filePath: "\\\\server\\forecasting\\occurrence_ratio\\occurrence_ratio_[WEEK].xlsx",
+    fileFormat: ".xlsx — Occurrence Ratio template",
+    readyWhen: "Sunday (after Task 1) CST",
+    dueBy:     "Sunday 11:59 PM CST",
+    deps: [1],
+    instructions: [
+      { step: "Confirm Task 1 (Automated Scheduling Process) is marked Complete.", link: "" },
+      { step: "Navigate to: \\\\server\\forecasting\\occurrence_ratio\\", link: "" },
+      { step: "Run the Occurrence Ratio batch process.", link: "" },
+      { step: "Validate the output file is saved in .xlsx format.", link: "" },
+      { step: "Archive the prior week's file before marking Complete.", link: "" }
+    ]
+  },
+  {
+    id: 3,
+    name: "Average Wage Rate Load",
+    owner: "Nazia",
+    fileRef: "Boomi",
+    filePath: "\\\\server\\inputs\\wage_rates\\avg_wage_rate_[WEEK].xlsx",
+    fileFormat: ".xlsx ONLY — do NOT use .csv or .xls (common upload error)",
+    readyWhen: "Monday 4:00 AM CST",
+    dueBy:     "Monday 5:30 AM CST",
+    deps: [],
+    instructions: [
+      { step: "Download the Average Wage Rate file from the source system.", link: "" },
+      { step: "Confirm the file is in .xlsx format — do NOT use .csv or .xls versions.", link: "" },
+      { step: "Save to: \\\\server\\inputs\\wage_rates\\avg_wage_rate_[WEEK].xlsx", link: "" },
+      { step: "Trigger the Boomi integration to load the wage rate data.", link: "" },
+      { step: "Verify successful load in the Boomi dashboard before marking Complete.", link: "" }
+    ]
+  },
+  {
+    id: 4,
+    name: "Custom and Static Driver Import",
+    owner: "Nazia",
+    fileRef: "Boomi",
+    filePath: "\\\\server\\inputs\\drivers\\custom_static_drivers_[WEEK].xlsx",
+    fileFormat: ".xlsx ONLY — column headers must match template exactly (do not rename or reorder)",
+    readyWhen: "Monday 4:40 AM CST (after Task 3)",
+    dueBy:     "Monday 5:30 AM CST",
+    deps: [3],
+    instructions: [
+      { step: "Confirm Task 3 (Average Wage Rate Load) is marked Complete.", link: "" },
+      { step: "Retrieve the Custom and Static Driver file from the designated source folder.", link: "" },
+      { step: "IMPORTANT: Confirm file is .xlsx — this is the most frequent source of upload failures.", link: "" },
+      { step: "Do NOT rename or reorder column headers — the integration requires exact matches.", link: "" },
+      { step: "Save to: \\\\server\\inputs\\drivers\\custom_static_drivers_[WEEK].xlsx", link: "" },
+      { step: "Run the Boomi import and confirm successful ingestion before marking Complete.", link: "" }
+    ]
+  },
+  {
+    id: 5,
+    name: "Volume Forecast",
+    owner: "Eric",
+    fileRef: "Batch Process",
+    filePath: "\\\\server\\forecasting\\volume\\volume_forecast_[WEEK].xlsx",
+    fileFormat: ".xlsx — Volume Forecast batch output",
+    readyWhen: "Monday 5:30 AM CST (after Tasks 3 & 4)",
+    dueBy:     "Monday 8:00 AM CST",
+    deps: [3, 4],
+    instructions: [
+      { step: "Confirm both Task 3 and Task 4 are marked Complete before proceeding.", link: "" },
+      { step: "Launch the Volume Forecast batch process from the scheduler.", link: "" },
+      { step: "Monitor the batch log — typical run time is 45–60 minutes.", link: "" },
+      { step: "Verify output is generated at: \\\\server\\forecasting\\volume\\", link: "" },
+      { step: "Spot-check volume totals against prior week for reasonableness before marking Complete.", link: "" }
+    ]
+  },
+  {
+    id: 6,
+    name: "Traffic Engine",
+    owner: "Eric",
+    fileRef: "Batch Process",
+    filePath: "\\\\server\\forecasting\\traffic\\traffic_output_[WEEK].xlsx",
+    fileFormat: ".xlsx — Traffic Engine batch output",
+    readyWhen: "Monday 8:00 AM CST (after Task 5)",
+    dueBy:     "Monday 6:00 PM CST",
+    deps: [5],
+    instructions: [
+      { step: "Confirm Volume Forecast (Task 5) is marked Complete.", link: "" },
+      { step: "Initiate the Traffic Engine batch process.", link: "" },
+      { step: "Monitor for completion — escalate if run time exceeds 2 hours.", link: "" },
+      { step: "Review traffic output at: \\\\server\\forecasting\\traffic\\", link: "" },
+      { step: "Validate traffic patterns are consistent with historical trends before marking Complete.", link: "" }
+    ]
+  },
+  {
+    id: 7,
+    name: "Volume and Traffic Forecast Imports",
+    owner: "Anju/Billy",
+    fileRef: "Integration",
+    filePath: "Source: \\\\server\\forecasting\\volume\\ and \\\\server\\forecasting\\traffic\\",
+    fileFormat: ".xlsx — Both the Volume and Traffic output files are required; import volume first",
+    readyWhen: "Monday 6:00 PM CST (after Tasks 5 & 6)",
+    dueBy:     "Monday 11:00 PM CST",
+    deps: [5, 6],
+    instructions: [
+      { step: "Confirm both Volume Forecast (Task 5) and Traffic Engine (Task 6) are Complete.", link: "" },
+      { step: "Navigate to the integration import screen.", link: "" },
+      { step: "Import the Volume Forecast file FIRST, then the Traffic output file.", link: "" },
+      { step: "Verify both files are accepted without validation errors.", link: "" },
+      { step: "Confirm import success in the system log before marking Complete.", link: "" }
+    ]
+  },
+  {
+    id: 8,
+    name: "Labor Forecast",
+    owner: "Eric",
+    fileRef: "Batch Process",
+    filePath: "\\\\server\\forecasting\\labor\\labor_forecast_[WEEK].xlsx",
+    fileFormat: ".xlsx — Labor Forecast batch output",
+    readyWhen: "Monday 9:00 PM CST (after Task 7)",
+    dueBy:     "Monday 11:59 PM CST",
+    deps: [7],
+    instructions: [
+      { step: "Confirm Volume and Traffic Imports (Task 7) are marked Complete.", link: "" },
+      { step: "Launch the Labor Forecast batch process.", link: "" },
+      { step: "Monitor the batch run — expected completion within 90 minutes.", link: "" },
+      { step: "Validate labor hours by department against budget targets.", link: "" },
+      { step: "Save output to: \\\\server\\forecasting\\labor\\ and mark Complete.", link: "" }
+    ]
+  },
+  {
+    id: 9,
+    name: "Budget Import 1 — Budget Inputs",
+    owner: "Anju/Billy",
+    fileRef: "Integration",
+    filePath: "\\\\server\\budget\\inputs\\budget_inputs_[WEEK].xlsx",
+    fileFormat: ".xlsx — Multi-tab Budget Inputs template (DO NOT flatten to single sheet)",
+    readyWhen: "Monday 11:00 PM CST (after Task 8)",
+    dueBy:     "Tuesday 5:00 AM CST",
+    deps: [8],
+    instructions: [
+      { step: "Confirm Labor Forecast (Task 8) is marked Complete.", link: "" },
+      { step: "Retrieve the Budget Inputs file — must be .xlsx with all tabs intact.", link: "" },
+      { step: "Do NOT flatten or re-save as a single sheet — the integration requires the full tab structure.", link: "" },
+      { step: "Run Budget Import 1 via the integration platform.", link: "" },
+      { step: "Check the import summary for row counts and error flags before marking Complete.", link: "" }
+    ]
+  },
+  {
+    id: 10,
+    name: "Budget Import 2 — Labor Constraint & Cost",
+    owner: "Anju/Billy",
+    fileRef: "Integration",
+    filePath: "\\\\server\\budget\\constraints\\labor_constraint_cost_[WEEK].xlsx",
+    fileFormat: ".xlsx — Labor Constraint and Cost template (do NOT use exported .csv)",
+    readyWhen: "Tuesday 5:00 AM CST (after Task 9)",
+    dueBy:     "Tuesday 8:00 AM CST",
+    deps: [9],
+    instructions: [
+      { step: "Confirm Budget Import 1 (Task 9) completed without errors.", link: "" },
+      { step: "Pull the Labor Constraint and Cost file from: \\\\server\\budget\\constraints\\", link: "" },
+      { step: "Verify the file is .xlsx — do not use exported .csv versions.", link: "" },
+      { step: "Run Budget Import 2 via the integration platform.", link: "" },
+      { step: "Validate cost totals in the system match the source file before marking Complete.", link: "" }
+    ]
+  },
+  {
+    id: 11,
+    name: "Consolidate Volume",
+    owner: "Eric",
+    fileRef: "Batch Process",
+    filePath: "\\\\server\\forecasting\\consolidated\\volume_consolidated_[WEEK].xlsx",
+    fileFormat: ".xlsx — Consolidated Volume output",
+    readyWhen: "Tuesday 8:00 AM CST (after Tasks 7 & 10)",
+    dueBy:     "Tuesday 10:00 AM CST",
+    deps: [7, 10],
+    instructions: [
+      { step: "Confirm Volume/Traffic Imports (Task 7) and Budget Import 2 (Task 10) are Complete.", link: "" },
+      { step: "Run the Consolidate Volume batch process.", link: "" },
+      { step: "Review consolidated totals across all departments and locations.", link: "" },
+      { step: "Flag any outliers greater than ±10% vs. prior week for review.", link: "" },
+      { step: "Save output and mark Complete.", link: "" }
+    ]
+  },
+  {
+    id: 12,
+    name: "Consolidate Labor",
+    owner: "Eric",
+    fileRef: "Batch Process",
+    filePath: "\\\\server\\forecasting\\consolidated\\labor_consolidated_[WEEK].xlsx",
+    fileFormat: ".xlsx — Consolidated Labor output",
+    readyWhen: "Tuesday 10:00 AM CST (after Tasks 8 & 11)",
+    dueBy:     "Tuesday 11:59 PM CST",
+    deps: [8, 11],
+    instructions: [
+      { step: "Confirm Labor Forecast (Task 8) and Consolidate Volume (Task 11) are Complete.", link: "" },
+      { step: "Run the Consolidate Labor batch process.", link: "" },
+      { step: "Review consolidated labor hours by store and department.", link: "" },
+      { step: "Verify totals reconcile to the Labor Forecast output.", link: "" },
+      { step: "Save and mark Complete — Store Leadership begins manual edits next.", link: "" }
+    ]
+  },
+  {
+    id: 13,
+    name: "Manual Schedule Edits Completed",
+    owner: "Store Leadership",
+    fileRef: "Manual",
+    filePath: "\\\\server\\schedules\\manual_edits\\[STORE]_schedule_[WEEK].xlsx",
+    fileFormat: ".xlsx — One file per store; do NOT convert to .csv before saving",
+    readyWhen: "Tuesday (after Task 12) CST",
+    dueBy:     "Tuesday 11:59 PM CST",
+    deps: [12],
+    instructions: [
+      { step: "Review the consolidated labor schedule output from Task 12.", link: "" },
+      { step: "Open your store's schedule file from: \\\\server\\schedules\\manual_edits\\", link: "" },
+      { step: "Make all required adjustments — shift swaps, coverage corrections, approvals.", link: "" },
+      { step: "Save your file in .xlsx format (do NOT convert to .csv).", link: "" },
+      { step: "Notify the scheduling team once all store edits are finalized, then mark Complete.", link: "" }
+    ]
+  },
+  {
+    id: 14,
+    name: "SGS — Auto Scheduler",
+    owner: "Khalid/Sched",
+    fileRef: "Batch Process",
+    filePath: "\\\\server\\sgs\\auto_scheduler\\sgs_output_[WEEK].xlsx",
+    fileFormat: ".xlsx — SGS Auto Scheduler output",
+    readyWhen: "Wednesday 4:30 AM CST (after Task 13)",
+    dueBy:     "Wednesday 8:00 AM CST",
+    deps: [13],
+    instructions: [
+      { step: "Confirm all Manual Schedule Edits (Task 13) are marked Complete.", link: "" },
+      { step: "Launch the SGS Auto Scheduler batch process at 4:30 AM CST.", link: "" },
+      { step: "Monitor the run and check for store-level scheduling conflicts.", link: "" },
+      { step: "Review the output report for scheduling gaps or over-allocation.", link: "" },
+      { step: "Confirm output is saved to the SGS output folder before marking Complete.", link: "" }
+    ]
+  },
+  {
+    id: 15,
+    name: "SGS — Open Shifts",
+    owner: "Khalid/Sched",
+    fileRef: "Batch Process",
+    filePath: "\\\\server\\sgs\\open_shifts\\open_shifts_[WEEK].xlsx",
+    fileFormat: ".xlsx — Open Shifts report",
+    readyWhen: "Wednesday (after Task 14) CST",
+    dueBy:     "Wednesday 11:59 PM CST",
+    deps: [14],
+    instructions: [
+      { step: "Confirm SGS Auto Scheduler (Task 14) completed successfully.", link: "" },
+      { step: "Run the SGS Open Shifts process to identify unfilled shifts.", link: "" },
+      { step: "Review the Open Shifts report and prioritize critical coverage gaps.", link: "" },
+      { step: "Distribute the open shifts report to store managers for action.", link: "" },
+      { step: "Save the final file to: \\\\server\\sgs\\open_shifts\\ and mark Complete.", link: "" }
+    ]
+  }
+];
+
+// ════════════════════════════════════════════════════════════════
+// CONSTANTS & STORAGE KEYS
+// ════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════
+// SHAREPOINT CONFIG
+// ════════════════════════════════════════════════════════════════
+const SP_SITE = "https://amedeloitte.sharepoint.com/sites/WholeFoodsTechModernization-WFMUKGAudit/Shared%20Documents/Forms/AllItems.aspx?id=%2Fsites%2FWholeFoodsTechModernization%2DWFMUKGAudit%2FShared%20Documents%2FWFM%20UKG%20Implementation%2FPhase%202&viewid=56867c42%2Def34%2D459d%2Da6ef%2D3d5f847a3bf4&newTargetListUrl=%2Fsites%2FWholeFoodsTechModernization%2DWFMUKGAudit%2FShared%20Documents&viewpath=%2Fsites%2FWholeFoodsTechModernization%2DWFMUKGAudit%2FShared%20Documents%2FForms%2FAllItems%2Easpx"; // ← UPDATE THIS
+const SP_LIST = "ForecastDashboardState";
+const SP_TYPE = "SP.Data.ForecastDashboardStateListItem";
+const IS_SHAREPOINT = window.location.hostname.includes("sharepoint.com");
+let spItemMap = {}; // { taskId → SP list item numeric Id }
+
+// ════════════════════════════════════════════════════════════════
+// SHAREPOINT REST HELPERS
+// ════════════════════════════════════════════════════════════════
+async function spDigest() {
+  const r = await fetch(`${SP_SITE}/_api/contextinfo`, {
+    method: "POST", credentials: "include",
+    headers: { "Accept": "application/json;odata=verbose", "Content-Type": "application/json" }
+  });
+  const d = await r.json();
+  return d.d.GetContextWebInformation.FormDigestValue;
+}
+
+async function spGet(url) {
+  const r = await fetch(url, {
+    credentials: "include",
+    headers: { "Accept": "application/json;odata=verbose" }
+  });
+  if (!r.ok) throw new Error(`SP GET ${r.status}`);
+  return r.json();
+}
+
+async function spWrite(url, body, method) {
+  const digest = await spDigest();
+  const headers = {
+    "Accept":         "application/json;odata=verbose",
+    "Content-Type":   "application/json;odata=verbose",
+    "X-RequestDigest": digest
+  };
+  if (method) { headers["X-HTTP-Method"] = method; headers["If-Match"] = "*"; }
+  const r = await fetch(url, {
+    method: "POST", credentials: "include",
+    headers, body: JSON.stringify(body)
+  });
+  if (!r.ok && r.status !== 204) throw new Error(`SP write ${r.status}`);
+  return method ? null : r.json();
+}
+
+function spItemBody(taskId) {
+  const s  = taskState[taskId] || {};
+  const ov = taskOverrides[taskId] || {};
+  return {
+    "__metadata":           { "type": SP_TYPE },
+    "TaskStatus":           s.status      || "",
+    "TaskComment":          s.comment     || "",
+    "ManualBlock":          !!s.manualBlock,
+    "StartedAt":            s.startedAt   || "",
+    "CompletedAt":          s.completedAt || "",
+    "BlockedAt":            s.blockedAt   || "",
+    "OwnerOverride":        ov.owner       || "",
+    "ReadyWhenOverride":    ov.readyWhen   || "",
+    "DueByOverride":        ov.dueBy       || "",
+    "FileFormatOverride":   ov.fileFormat  || "",
+    "InstructionsOverride": ov.instructions ? JSON.stringify(ov.instructions) : ""
+  };
+}
+
+async function spCreateItem(taskId) {
+  const body = { ...spItemBody(taskId), "Title": String(taskId) };
+  const d    = await spWrite(`${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items`, body);
+  spItemMap[taskId] = d.d.Id;
+}
+
+async function spUpdateItem(taskId) {
+  if (!spItemMap[taskId]) { await spCreateItem(taskId); return; }
+  await spWrite(
+    `${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items(${spItemMap[taskId]})`,
+    spItemBody(taskId), "MERGE"
+  );
+}
+
+// Called after every state change — updates localStorage instantly, SP in background
+function persistTask(taskId) {
+  localStorage.setItem(STORAGE_KEY,   JSON.stringify(taskState));
+  localStorage.setItem(OVERRIDE_KEY,  JSON.stringify(taskOverrides));
+  if (IS_SHAREPOINT) spUpdateItem(taskId).catch(() => showToast("⚠️ SharePoint save failed — check connection."));
+}
+
+// Polls SP every 30 s so all users see live updates
+async function spRefresh() {
+  try {
+    const cols = "Id,Title,TaskStatus,TaskComment,ManualBlock,StartedAt,CompletedAt,BlockedAt,OwnerOverride,ReadyWhenOverride,DueByOverride,FileFormatOverride,InstructionsOverride";
+    const d    = await spGet(`${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items?$top=100&$select=${cols}`);
+    d.d.results.forEach(item => {
+      const id = parseInt(item.Title);
+      if (!id) return;
+      spItemMap[id]  = item.Id;
+      taskState[id]  = {
+        status:      item.TaskStatus   || STATUS.NOT_READY,
+        comment:     item.TaskComment  || "",
+        manualBlock: item.ManualBlock  || false,
+        startedAt:   item.StartedAt    || null,
+        completedAt: item.CompletedAt  || null,
+        blockedAt:   item.BlockedAt    || null
+      };
+      if (!taskOverrides[id]) taskOverrides[id] = {};
+      if (item.OwnerOverride)        taskOverrides[id].owner        = item.OwnerOverride;
+      if (item.ReadyWhenOverride)    taskOverrides[id].readyWhen    = item.ReadyWhenOverride;
+      if (item.DueByOverride)        taskOverrides[id].dueBy        = item.DueByOverride;
+      if (item.FileFormatOverride)   taskOverrides[id].fileFormat   = item.FileFormatOverride;
+      if (item.InstructionsOverride) { try { taskOverrides[id].instructions = JSON.parse(item.InstructionsOverride); } catch(e) {} }
+    });
+    render();
+  } catch(e) { console.warn("SP refresh failed:", e); }
+}
+
+// Loading overlay
+function spLoading(show) {
+  let el = document.getElementById("sp-loading");
+  if (!el) {
+    el = document.createElement("div");
+    el.id = "sp-loading";
+    el.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;display:flex;align-items:center;justify-content:center";
+    el.innerHTML = `<div style="background:#fff;padding:30px 40px;border-radius:12px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25)">
+      <div style="font-size:16px;font-weight:700;color:#00674B;margin-bottom:6px">Connecting to SharePoint…</div>
+      <div style="font-size:12px;color:#64748b">Loading live task state</div>
+    </div>`;
+    document.body.appendChild(el);
+  }
+  el.style.display = show ? "flex" : "none";
+}
+
+const STORAGE_KEY   = "fcast_state_v3";
+const EMAIL_KEY     = "fcast_emails_v3";
+const NOTIFIED_KEY  = "fcast_notified_v2";
+const OVERRIDE_KEY  = "fcast_overrides_v1";
+const DISTRO_KEY    = "fcast_distro_v1";
+const TZ_KEY        = "fcast_tz_v1";
+
+const STATUS = { NOT_READY:"notready", READY:"ready", IN_PROGRESS:"inprogress", COMPLETE:"complete", BLOCKED:"blocked" };
+
+const STATUS_META = {
+  notready:   ["Not Ready",   "badge-notready",   "status-notready"],
+  ready:      ["Ready",       "badge-ready",      "status-ready"],
+  inprogress: ["In Progress", "badge-inprogress",  "status-inprogress"],
+  complete:   ["Complete",    "badge-complete",    "status-complete"],
+  blocked:    ["Blocked",     "badge-blocked",     "status-blocked"],
+};
+
+const DEFAULT_EMAILS = {
+  "Eric":            "",
+  "Nazia":           "",
+  "Anju/Billy":      "",
+  "Store Leadership":"",
+  "Khalid/Sched":    "",
+  "Automated":       ""
+};
+
+// ════════════════════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════════════════════
+let taskState    = {};  // { [id]: { status, comment, manualBlock, startedAt, completedAt, blockedAt } }
+let emailMap     = {};
+let notifiedSet  = new Set();
+let taskOverrides= {};  // { [id]: { owner?, readyWhen?, dueBy? } }
+let distroConfig = { distroEmail: "", sponsorEmail: "" };
+let selectedTZ   = "America/Chicago";
+
+function loadAll() {
+  try { const r = localStorage.getItem(STORAGE_KEY);  if (r) taskState = JSON.parse(r); } catch(e) {}
+  try { const r = localStorage.getItem(EMAIL_KEY);    if (r) emailMap = JSON.parse(r); else { emailMap = {...DEFAULT_EMAILS}; saveEmails(); } } catch(e) { emailMap = {...DEFAULT_EMAILS}; }
+  try { const r = localStorage.getItem(NOTIFIED_KEY); if (r) notifiedSet = new Set(JSON.parse(r)); } catch(e) {}
+  try { const r = localStorage.getItem(OVERRIDE_KEY); if (r) taskOverrides = JSON.parse(r); } catch(e) {}
+  try { const r = localStorage.getItem(DISTRO_KEY);   if (r) distroConfig = JSON.parse(r); } catch(e) {}
+  try { const r = localStorage.getItem(TZ_KEY);        if (r) selectedTZ   = r; } catch(e) {}
+  TASK_DEFINITIONS.forEach(t => {
+    if (!taskState[t.id]) taskState[t.id] = { status: STATUS.NOT_READY, comment: "", manualBlock: false, startedAt: null, completedAt: null, blockedAt: null };
+  });
+}
+function saveState()     { localStorage.setItem(STORAGE_KEY,   JSON.stringify(taskState)); }
+function saveEmails()    { localStorage.setItem(EMAIL_KEY,     JSON.stringify(emailMap)); }
+function saveNotified()  { localStorage.setItem(NOTIFIED_KEY,  JSON.stringify([...notifiedSet])); }
+function saveOverrides() { localStorage.setItem(OVERRIDE_KEY,  JSON.stringify(taskOverrides)); }
+function saveDistro()    { localStorage.setItem(DISTRO_KEY,    JSON.stringify(distroConfig)); }
+function saveTZ()        { localStorage.setItem(TZ_KEY,         selectedTZ); }
+
+function getField(task, field) {
+  return (taskOverrides[task.id] && taskOverrides[task.id][field] != null)
+    ? taskOverrides[task.id][field]
+    : task[field];
+}
+
+// ════════════════════════════════════════════════════════════════
+// STATUS DERIVATION
+// ════════════════════════════════════════════════════════════════
+function deriveStatus(task) {
+  const s = taskState[task.id];
+  if (s.manualBlock)                         return STATUS.BLOCKED;
+  if (s.status === STATUS.COMPLETE)          return STATUS.COMPLETE;
+  if (s.status === STATUS.IN_PROGRESS) {
+    const ok = task.deps.every(d => taskState[d]?.status === STATUS.COMPLETE);
+    return ok ? STATUS.IN_PROGRESS : STATUS.BLOCKED;
+  }
+  if (task.deps.length === 0)                return STATUS.READY;
+  return task.deps.every(d => taskState[d]?.status === STATUS.COMPLETE) ? STATUS.READY : STATUS.NOT_READY;
+}
+
+function recomputeAll() {
+  TASK_DEFINITIONS.forEach(task => {
+    const s = taskState[task.id];
+    if (s.manualBlock || s.status === STATUS.COMPLETE) return;
+    s.status = deriveStatus(task);
+  });
+  saveState();
+}
+
+// ════════════════════════════════════════════════════════════════
+// TIMESTAMPS
+// ════════════════════════════════════════════════════════════════
+function nowISO() { return new Date().toISOString(); }
+
+function fmtTs(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  return d.toLocaleString("en-US", {
+    weekday: "short", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+    timeZone: selectedTZ
+  }) + " " + tzLabel();
+}
+
+function tzLabel() {
+  const map = {
+    "America/Chicago":    "CST",
+    "America/New_York":   "EST",
+    "America/Los_Angeles":"PST",
+    "America/Denver":     "MST",
+    "Europe/London":      "GMT",
+    "Europe/Paris":       "CET",
+    "Asia/Kolkata":       "IST",
+    "Asia/Singapore":     "SGT",
+    "Australia/Sydney":   "AEST",
+    "Asia/Dubai":         "GST"
+  };
+  return map[selectedTZ] || selectedTZ;
+}
+
+function getWeekLabel() {
+  const now = new Date(); const dow = now.getDay();
+  const mon = new Date(now); mon.setDate(now.getDate() - ((dow+6)%7));
+  const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+  const f = d => d.toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});
+  return `Week of ${f(mon)} – ${f(fri)}`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// EMAIL / NOTIFICATIONS
+// ════════════════════════════════════════════════════════════════
+function checkAndNotify() {
+  TASK_DEFINITIONS.forEach(task => {
+    if (deriveStatus(task) === STATUS.READY && !notifiedSet.has(task.id)) {
+      const email = emailMap[getField(task,"owner")];
+      if (email) {
+        notifiedSet.add(task.id); saveNotified();
+        fireMailto(email,
+          `[Forecasting Dashboard] Task Ready: ${task.name}`,
+          `Hi ${getField(task,"owner")},\n\nYour task is now ready:\n\n  #${task.id}: ${task.name}\n  Due By: ${getField(task,"dueBy")}\n  File Path: ${task.filePath}\n  File Format: ${task.fileFormat}\n\nAll dependencies are complete. Please log in to the dashboard to begin.\n\n— Forecasting Dashboard`
+        );
+        showToast(`Notification sent to ${getField(task,"owner")} for Task #${task.id}`);
+      }
+    }
+  });
+}
+
+function fireMailto(to, subject, body) {
+  const a = document.createElement("a");
+  a.href = `mailto:${encodeURIComponent(to)}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  a.click();
+}
+
+function openManualNotifyModal(taskId) {
+  const task = TASK_DEFINITIONS.find(t => t.id === taskId);
+  const owner = getField(task,"owner");
+  const email = emailMap[owner] || "(no email set)";
+  const body = `To: ${email}\nSubject: [Forecasting Dashboard] Task Ready: ${task.name}\n\nHi ${owner},\n\nYour task is now ready:\n\n  #${task.id}: ${task.name}\n  Due By: ${getField(task,"dueBy")}\n  File: ${task.filePath}\n\nAll dependencies are complete. Please update your status in the dashboard.\n\n— Forecasting Dashboard`;
+  document.getElementById("modal-email-body").textContent = body;
+  document.getElementById("btn-send-email").onclick = () => {
+    if (emailMap[owner]) {
+      fireMailto(emailMap[owner], `[Forecasting Dashboard] Task Ready: ${task.name}`,
+        `Hi ${owner},\n\nYour task is now ready:\n\n#${task.id}: ${task.name}\nDue By: ${getField(task,"dueBy")}\nFile: ${task.filePath}\n\nAll dependencies are complete.\n\n— Forecasting Dashboard`);
+    }
+    closeModal("modal-email");
+  };
+  openModal("modal-email");
+}
+
+function sendBlockerEscalation(task, reason) {
+  const distro = distroConfig.distroEmail;
+  if (!distro) return;
+  const owner = getField(task,"owner");
+  fireMailto(distro,
+    `[Forecasting Dashboard ALERT] Task Blocked: #${task.id} ${task.name}`,
+    `A forecasting task has been marked BLOCKED and requires attention.\n\nTask #${task.id}: ${task.name}\nOwner: ${owner}\nDue By: ${getField(task,"dueBy")}\nBlocked At: ${fmtTs(taskState[task.id].blockedAt)}\n\nReason:\n${reason}\n\nPlease coordinate with ${owner} to resolve this blocker as soon as possible.\n\n— Forecasting Dashboard`
+  );
+}
+
+// ════════════════════════════════════════════════════════════════
+// REPORT GENERATION
+// ════════════════════════════════════════════════════════════════
+function generateReport() {
+  const lines = [];
+  const dash  = "═".repeat(50);
+  lines.push("WEEKLY FORECASTING — WEEKLY FORECASTING RUN SUMMARY");
+  lines.push(`Week:      ${getWeekLabel()}`);
+  lines.push(`Generated: ${fmtTs(nowISO())}`);
+  lines.push("");
+
+  let nComplete=0, nIncomplete=0, hadBlockers=[];
+  TASK_DEFINITIONS.forEach(t => {
+    const st = deriveStatus(t);
+    if (st === STATUS.COMPLETE) nComplete++;
+    else nIncomplete++;
+    if (taskState[t.id].blockedAt) hadBlockers.push(t);
+  });
+
+  lines.push(dash);
+  lines.push("COMPLETION SUMMARY");
+  lines.push(dash);
+  lines.push(`Tasks Complete:   ${nComplete} of ${TASK_DEFINITIONS.length}`);
+  lines.push(`Tasks Incomplete: ${nIncomplete}`);
+  lines.push(`Blockers Encountered: ${hadBlockers.length}`);
+  lines.push("");
+  lines.push(dash);
+  lines.push("TASK-BY-TASK DETAIL");
+  lines.push(dash);
+
+  TASK_DEFINITIONS.forEach(task => {
+    const s  = taskState[task.id];
+    const st = deriveStatus(task);
+    const owner = getField(task,"owner");
+    const dueBy = getField(task,"dueBy");
+    lines.push("");
+    lines.push(`#${task.id} — ${task.name}`);
+    lines.push(`  Owner:      ${owner}`);
+    lines.push(`  Due By:     ${dueBy}`);
+    lines.push(`  Status:     ${STATUS_META[st][0]}`);
+    if (s.startedAt)   lines.push(`  Started:    ${fmtTs(s.startedAt)}`);
+    if (s.completedAt) lines.push(`  Completed:  ${fmtTs(s.completedAt)}`);
+    if (s.blockedAt)   lines.push(`  Blocked At: ${fmtTs(s.blockedAt)}`);
+    if (s.comment)     lines.push(`  Notes:      ${s.comment}`);
+    if (!s.completedAt && st !== STATUS.COMPLETE) lines.push(`  ** INCOMPLETE / NOT FINISHED **`);
+  });
+
+  if (hadBlockers.length > 0) {
+    lines.push("");
+    lines.push(dash);
+    lines.push("BLOCKERS ENCOUNTERED THIS WEEK");
+    lines.push(dash);
+    hadBlockers.forEach(task => {
+      const s = taskState[task.id];
+      const resolved = deriveStatus(task) !== STATUS.BLOCKED ? "Yes — Resolved" : "NO — Still Blocked";
+      lines.push("");
+      lines.push(`#${task.id} — ${task.name}`);
+      lines.push(`  Blocked At: ${fmtTs(s.blockedAt)}`);
+      lines.push(`  Reason:     ${s.comment}`);
+      lines.push(`  Resolved:   ${resolved}`);
+    });
+  }
+
+  return lines.join("\n");
+}
+
+
+// ════════════════════════════════════════════════════════════════
+// INLINE EMAIL CELL
+// ════════════════════════════════════════════════════════════════
+function emailCellHtml(taskId, owner) {
+  const email = emailMap[owner] || "";
+  return `<div class="field-wrap" id="efw-${taskId}">
+    <span class="field-val" style="color:${email ? "#1e293b" : "#94a3b8"};font-size:12px" id="efv-${taskId}">${esc(email || "Click to add…")}</span>
+    <button class="btn-pencil" title="Edit email" onclick="startEmailEdit(${taskId},'${esc(owner)}')">&#9998;</button>
+  </div>`;
+}
+
+function startEmailEdit(taskId, owner) {
+  const cur = emailMap[owner] || "";
+  const wrap = document.getElementById(`efw-${taskId}`);
+  wrap.innerHTML = `<div class="inline-edit-wrap">
+    <input class="inline-edit-input" type="email" id="eie-${taskId}" value="${esc(cur)}" placeholder="owner@company.com">
+    <div class="inline-edit-actions">
+      <button class="btn-ie-save" onclick="saveEmailInline(${taskId},'${esc(owner)}')">Save</button>
+      <button class="btn-ie-cancel" onclick="render()">Cancel</button>
+    </div>
+  </div>`;
+  document.getElementById(`eie-${taskId}`).focus();
+}
+
+function saveEmailInline(taskId, owner) {
+  const val = document.getElementById(`eie-${taskId}`).value.trim();
+  if (val && !/^[^@]+@[^@]+\.[^@]+$/.test(val)) {
+    showToast("Please enter a valid email address.");
+    return;
+  }
+  const wasEmpty = !emailMap[owner];
+  emailMap[owner] = val;
+  saveEmails();
+  render();
+  showToast(`Email saved for ${owner}.`);
+  // Auto-notify if task is ready and email was just added
+  if (val) {
+    const task = TASK_DEFINITIONS.find(t => getField(t,"owner") === owner);
+    if (task) {
+      const status = deriveStatus(task);
+      if (status === STATUS.READY || status === STATUS.IN_PROGRESS) {
+        // Show notification prompt
+        setTimeout(() => {
+          const send = confirm(`Email saved for ${owner}.\n\nTask #${task.id} (${task.name}) is currently ${STATUS_META[status][0]}.\n\nSend a notification email to ${val} now?`);
+          if (send) {
+            fireMailto(val,
+              `[Forecasting Dashboard] Task Ready: ${task.name}`,
+              `Hi ${owner},\n\nYour task is now ready to begin:\n\n  #${task.id}: ${task.name}\n  Due By: ${getField(task,"dueBy")}\n  File: ${task.filePath}\n\nAll dependencies are complete. Please update your status in the dashboard.\n\n— Weekly Forecasting Dashboard`
+            );
+            notifiedSet.add(task.id);
+            saveNotified();
+            showToast(`Notification email opened for ${owner}.`);
+          }
+        }, 400);
+      }
+    }
+  }
+}
+
+// ════════════════════════════════════════════════════════════════
+// RENDER
+// ════════════════════════════════════════════════════════════════
+function render() {
+  recomputeAll();
+  checkAndNotify();
+
+  const tbody = document.getElementById("task-tbody");
+  tbody.innerHTML = "";
+
+  let nC=0, nI=0, nR=0, nB=0;
+
+  TASK_DEFINITIONS.forEach(task => {
+    const s      = taskState[task.id];
+    const status = deriveStatus(task);
+    const [label, badgeClass, rowClass] = STATUS_META[status];
+    if (status===STATUS.COMPLETE)    nC++;
+    if (status===STATUS.IN_PROGRESS) nI++;
+    if (status===STATUS.READY)       nR++;
+    if (status===STATUS.BLOCKED)     nB++;
+
+    const owner    = getField(task,"owner");
+    const readyWhen= getField(task,"readyWhen");
+    const dueBy    = getField(task,"dueBy");
+
+    const depTags = task.deps.length
+      ? task.deps.map(d=>`<span class="dep-tag">#${d}</span>`).join(" ")
+      : `<span style="color:#94a3b8">—</span>`;
+
+    const isDone     = status === STATUS.COMPLETE;
+    const isBlocked  = status === STATUS.BLOCKED;
+    const isReady    = status === STATUS.READY;
+    const isInProg   = status === STATUS.IN_PROGRESS;
+    const canAct     = isReady || isInProg;
+
+    // Timestamp line
+    let tsHtml = "";
+    if (s.startedAt && !s.completedAt) tsHtml = `Started: ${fmtTs(s.startedAt)}`;
+    if (s.completedAt) tsHtml = `Completed: ${fmtTs(s.completedAt)}`;
+    if (s.blockedAt && isBlocked) tsHtml = `Blocked: ${fmtTs(s.blockedAt)}`;
+
+    const actionBtns = `
+      ${!isDone && isReady ? `<button class="btn btn-progress" onclick="openStartModal(${task.id})">Start</button>` : ""}
+      ${!isDone && canAct  ? `<button class="btn btn-complete" onclick="openCompleteModal(${task.id})">Done</button>` : ""}
+      ${!isDone && canAct && !isBlocked ? `<button class="btn btn-block" onclick="openBlockModal(${task.id})">Block</button>` : ""}
+      ${isBlocked  ? `<button class="btn btn-undo" onclick="openUnblockModal(${task.id})">Unblock</button>` : ""}
+      ${isDone     ? `<button class="btn btn-undo" onclick="undoComplete(${task.id})">Undo</button>` : ""}
+      ${canAct     ? `<button class="btn btn-email" onclick="openManualNotifyModal(${task.id})">Notify</button>` : ""}
+    `;
+
+    const tr = document.createElement("tr");
+    tr.className = rowClass;
+    tr.id = `row-${task.id}`;
+    tr.innerHTML = `
+      <td class="step-num">${task.id}</td>
+      <td class="task-name">
+        <div class="task-title">
+          <span class="task-name-link" onclick="openGuide(${task.id})">${esc(task.name)}</span>
+        </div>
+        <div class="task-meta">${esc(task.fileRef)}</div>
+        ${tsHtml ? `<div class="task-ts">${esc(tsHtml)}</div>` : ""}
+      </td>
+      <td style="font-size:12px;color:#475569;min-width:160px">${editableField(task.id,"fileFormat",getField(task,"fileFormat"))}</td>
+      <td class="owner-cell">${editableField(task.id,"owner",owner)}</td>
+      <td class="owner-cell">${emailCellHtml(task.id, owner)}</td>
+      <td class="time-cell">${editableField(task.id,"readyWhen",readyWhen)}</td>
+      <td class="time-cell">${editableField(task.id,"dueBy",dueBy)}</td>
+      <td class="deps-cell">${depTags}</td>
+      <td class="status-cell"><span class="status-badge ${badgeClass}">${label}</span></td>
+      <td class="actions">${actionBtns}</td>
+      <td class="comment-cell">
+        <div class="comment-text" id="ct-${task.id}">${esc(s.comment)}</div>
+        <textarea class="edit-comment-input" id="ci-${task.id}" rows="2" placeholder="Add a note…">${esc(s.comment)}</textarea>
+        <button class="btn-save-comment" onclick="saveComment(${task.id})">Save</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  });
+
+  document.getElementById("n-complete").textContent = nC;
+  document.getElementById("n-inprog").textContent   = nI;
+  document.getElementById("n-ready").textContent    = nR;
+  document.getElementById("n-blocked").textContent  = nB;
+  const total = TASK_DEFINITIONS.length;
+  const pct   = total ? Math.round(nC/total*100) : 0;
+  document.getElementById("progress-fill").style.width = pct+"%";
+  document.getElementById("progress-label").textContent = `${nC} of ${total} tasks complete (${pct}%)`;
+}
+
+function editableField(id, field, val) {
+  return `<div class="field-wrap" id="fw-${id}-${field}">
+    <span class="field-val">${esc(val)}</span>
+    <button class="btn-pencil" title="Edit" onclick="startEdit(${id},'${field}')">&#9998;</button>
+  </div>`;
+}
+
+function startEdit(id, field) {
+  const task = TASK_DEFINITIONS.find(t=>t.id===id);
+  const curVal = getField(task, field);
+  const wrap = document.getElementById(`fw-${id}-${field}`);
+  wrap.innerHTML = `
+    <div class="inline-edit-wrap">
+      <input class="inline-edit-input" id="ie-${id}-${field}" value="${esc(curVal)}">
+      <div class="inline-edit-actions">
+        <button class="btn-ie-save" onclick="saveEdit(${id},'${field}')">Save</button>
+        <button class="btn-ie-cancel" onclick="cancelEdit(${id},'${field}')">Cancel</button>
+      </div>
+    </div>`;
+  document.getElementById(`ie-${id}-${field}`).focus();
+}
+
+function saveEdit(id, field) {
+  const val = document.getElementById(`ie-${id}-${field}`).value.trim();
+  if (!taskOverrides[id]) taskOverrides[id] = {};
+  taskOverrides[id][field] = val;
+  persistTask(id);
+  render();
+  showToast(`Updated ${field} for Task #${id}`);
+}
+
+function cancelEdit(id, field) { render(); }
+
+// ════════════════════════════════════════════════════════════════
+// GUIDE MODAL
+// ════════════════════════════════════════════════════════════════
+let activeGuideId = null;
+
+function getInstructions(task) {
+  return (taskOverrides[task.id] && taskOverrides[task.id].instructions) || task.instructions;
+}
+
+function buildGuideContent(task, nameEl, fileInfoEl, stepsEl) {
+  const fmt   = getField(task, "fileFormat");
+  const instrs= getInstructions(task);
+  nameEl.textContent = `#${task.id} — ${task.name}`;
+  fileInfoEl.innerHTML = `
+    <div class="file-info-box">
+      <div class="fi-row"><span class="fi-label">File Path:</span><span class="fi-val">${esc(task.filePath)}</span></div>
+      <div class="fi-row"><span class="fi-label">File Format:</span><span class="fi-val">${esc(fmt)}</span></div>
+      <div class="fi-row"><span class="fi-label">Owner:</span><span class="fi-val">${esc(getField(task,"owner"))}</span></div>
+      <div class="fi-row"><span class="fi-label">Due By:</span><span class="fi-val">${esc(getField(task,"dueBy"))}</span></div>
+      ${fmt.includes("NOT") || fmt.includes("do NOT") ? `<div class="fi-warning">Format Warning: ${esc(fmt)}</div>` : ""}
+    </div>`;
+  stepsEl.innerHTML = instrs.map((instr,i) => `
+    <li>
+      <div class="instr-num">${i+1}</div>
+      <div>
+        ${esc(instr.step)}
+        ${instr.link ? `<a href="${esc(instr.link)}" target="_blank" class="instr-link">Open Reference &rarr;</a>` : ""}
+      </div>
+    </li>`).join("");
+}
+
+function openGuide(id) {
+  activeGuideId = id;
+  const task = TASK_DEFINITIONS.find(t=>t.id===id);
+  // Reset to view mode
+  document.getElementById("guide-steps-section").style.display = "";
+  document.getElementById("guide-edit-section").style.display  = "none";
+  document.getElementById("btn-save-guide").style.display      = "none";
+  document.getElementById("btn-guide-edit-toggle").textContent = "Edit Guide";
+  buildGuideContent(task,
+    document.getElementById("guide-task-name"),
+    document.getElementById("guide-file-info"),
+    document.getElementById("guide-steps")
+  );
+  openModal("modal-guide");
+}
+
+function toggleGuideEdit() {
+  const viewSection = document.getElementById("guide-steps-section");
+  const editSection = document.getElementById("guide-edit-section");
+  const saveBtn     = document.getElementById("btn-save-guide");
+  const toggleBtn   = document.getElementById("btn-guide-edit-toggle");
+  const isEditing   = editSection.style.display !== "none";
+
+  if (isEditing) {
+    // Switch back to view
+    viewSection.style.display = "";
+    editSection.style.display = "none";
+    saveBtn.style.display     = "none";
+    toggleBtn.textContent     = "Edit Guide";
+  } else {
+    // Switch to edit
+    viewSection.style.display = "none";
+    editSection.style.display = "";
+    saveBtn.style.display     = "";
+    toggleBtn.textContent     = "Cancel Edit";
+    buildGuideEditUI();
+  }
+}
+
+function buildGuideEditUI() {
+  const task   = TASK_DEFINITIONS.find(t=>t.id===activeGuideId);
+  const instrs = getInstructions(task);
+  const wrap   = document.getElementById("guide-edit-steps");
+  wrap.innerHTML = instrs.map((instr,i) => guideStepEditRow(i, instr.step, instr.link)).join("");
+}
+
+function guideStepEditRow(i, stepVal, linkVal) {
+  return `<div class="guide-step-edit" id="gse-${i}">
+    <div class="step-num-edit">${i+1}</div>
+    <div class="step-fields">
+      <textarea placeholder="Step description…" id="gse-step-${i}">${esc(stepVal||"")}</textarea>
+      <input type="url" placeholder="Optional link URL (leave blank if none)" id="gse-link-${i}" value="${esc(linkVal||"")}">
+      <button class="btn-remove-step" onclick="removeGuideStep(${i})">Remove Step</button>
+    </div>
+  </div>`;
+}
+
+function addGuideStep() {
+  const wrap  = document.getElementById("guide-edit-steps");
+  const count = wrap.querySelectorAll(".guide-step-edit").length;
+  const div   = document.createElement("div");
+  div.innerHTML = guideStepEditRow(count, "", "");
+  wrap.appendChild(div.firstElementChild);
+}
+
+function removeGuideStep(i) {
+  const el = document.getElementById(`gse-${i}`);
+  if (el) el.remove();
+  // Renumber remaining
+  document.querySelectorAll(".guide-step-edit").forEach((row, idx) => {
+    row.id = `gse-${idx}`;
+    row.querySelector(".step-num-edit").textContent = idx+1;
+    row.querySelector("textarea").id = `gse-step-${idx}`;
+    row.querySelector("input").id    = `gse-link-${idx}`;
+    row.querySelector(".btn-remove-step").setAttribute("onclick", `removeGuideStep(${idx})`);
+  });
+}
+
+function saveGuideEdits() {
+  const task  = TASK_DEFINITIONS.find(t=>t.id===activeGuideId);
+  const rows  = document.querySelectorAll(".guide-step-edit");
+  const instrs= [];
+  rows.forEach((row, i) => {
+    const step = document.getElementById(`gse-step-${i}`)?.value.trim();
+    const link = document.getElementById(`gse-link-${i}`)?.value.trim();
+    if (step) instrs.push({ step, link: link || "" });
+  });
+  if (!taskOverrides[activeGuideId]) taskOverrides[activeGuideId] = {};
+  taskOverrides[activeGuideId].instructions = instrs;
+  persistTask(activeGuideId);
+  // Switch back to view
+  toggleGuideEdit();
+  const updatedTask = TASK_DEFINITIONS.find(t=>t.id===activeGuideId);
+  buildGuideContent(updatedTask,
+    document.getElementById("guide-task-name"),
+    document.getElementById("guide-file-info"),
+    document.getElementById("guide-steps")
+  );
+  showToast(`Guide updated for Task #${activeGuideId}.`);
+}
+
+// ════════════════════════════════════════════════════════════════
+// ACTION MODALS
+// ════════════════════════════════════════════════════════════════
+let pendingId = null;
+
+function openStartModal(id) {
+  pendingId = id;
+  const task = TASK_DEFINITIONS.find(t=>t.id===id);
+  buildGuideContent(task,
+    document.getElementById("start-task-name"),
+    document.getElementById("start-file-info"),
+    document.getElementById("start-steps")
+  );
+  openModal("modal-start");
+}
+
+document.getElementById("btn-confirm-start").onclick = () => {
+  if (!pendingId) return;
+  taskState[pendingId].status    = STATUS.IN_PROGRESS;
+  taskState[pendingId].manualBlock = false;
+  taskState[pendingId].startedAt = nowISO();
+  persistTask(pendingId); closeModal("modal-start"); render();
+  showToast(`Task #${pendingId} started.`);
+  pendingId = null;
+};
+
+function openCompleteModal(id) {
+  pendingId = id;
+  const task = TASK_DEFINITIONS.find(t=>t.id===id);
+  buildGuideContent(task,
+    document.getElementById("complete-task-name"),
+    document.getElementById("complete-file-info"),
+    document.getElementById("complete-steps")
+  );
+  document.getElementById("complete-comment").value = taskState[id].comment || "";
+  openModal("modal-complete");
+}
+
+document.getElementById("btn-confirm-complete").onclick = () => {
+  if (!pendingId) return;
+  const comment = document.getElementById("complete-comment").value.trim();
+  const s = taskState[pendingId];
+  s.status      = STATUS.COMPLETE;
+  s.manualBlock  = false;
+  s.comment      = comment;
+  s.completedAt  = nowISO();
+  if (!s.startedAt) s.startedAt = s.completedAt;
+  persistTask(pendingId); closeModal("modal-complete"); render();
+  showToast(`Task #${pendingId} marked Complete.`);
+  pendingId = null;
+};
+
+function openBlockModal(id) {
+  pendingId = id;
+  const task = TASK_DEFINITIONS.find(t=>t.id===id);
+  document.getElementById("block-task-name").textContent = `#${id} — ${task.name}`;
+  document.getElementById("block-comment").value = "";
+  openModal("modal-block");
+}
+
+document.getElementById("btn-confirm-block").onclick = () => {
+  if (!pendingId) return;
+  const reason = document.getElementById("block-comment").value.trim();
+  if (!reason) { alert("Please provide a reason for the block."); return; }
+  const s = taskState[pendingId];
+  s.manualBlock = true;
+  s.status      = STATUS.BLOCKED;
+  s.comment     = reason;
+  s.blockedAt   = nowISO();
+  persistTask(pendingId);
+  closeModal("modal-block");
+  const task = TASK_DEFINITIONS.find(t=>t.id===pendingId);
+  sendBlockerEscalation(task, reason);
+  render();
+  showToast(`Task #${pendingId} blocked. Escalation email sent.`);
+  pendingId = null;
+};
+
+function openUnblockModal(id) {
+  pendingId = id;
+  const task = TASK_DEFINITIONS.find(t=>t.id===id);
+  document.getElementById("unblock-task-name").textContent = `#${id} — ${task.name}`;
+  document.getElementById("unblock-comment").value = "";
+  openModal("modal-unblock");
+}
+
+document.getElementById("btn-confirm-unblock").onclick = () => {
+  if (!pendingId) return;
+  const note = document.getElementById("unblock-comment").value.trim();
+  if (!note) { alert("Please describe how the block was resolved."); return; }
+  const s = taskState[pendingId];
+  s.manualBlock = false;
+  s.status      = STATUS.NOT_READY;
+  s.comment     = (s.comment ? s.comment + " | RESOLVED: " : "RESOLVED: ") + note;
+  s.blockedAt   = s.blockedAt; // keep for report
+  persistTask(pendingId); closeModal("modal-unblock"); render();
+  showToast(`Task #${pendingId} unblocked.`);
+  pendingId = null;
+};
+
+function undoComplete(id) {
+  const s = taskState[id];
+  s.status      = STATUS.NOT_READY;
+  s.completedAt = null;
+  s.startedAt   = null;
+  notifiedSet.delete(id);
+  saveNotified(); persistTask(id); render();
+  showToast(`Task #${id} reset.`);
+}
+
+function saveComment(id) {
+  const val = document.getElementById(`ci-${id}`).value.trim();
+  taskState[id].comment = val;
+  persistTask(id);
+  document.getElementById(`ct-${id}`).textContent = val;
+  showToast(`Comment saved for Task #${id}.`);
+}
+
+// ════════════════════════════════════════════════════════════════
+// RESET & REPORT
+// ════════════════════════════════════════════════════════════════
+document.getElementById("btn-reset").onclick = () => openModal("modal-reset");
+
+document.getElementById("btn-preview-report").onclick = () => {
+  const report = generateReport();
+  document.getElementById("report-content").textContent = report;
+  closeModal("modal-reset");
+  openModal("modal-report");
+};
+
+document.getElementById("btn-copy-report").onclick = () => {
+  const text = document.getElementById("report-content").textContent;
+  navigator.clipboard.writeText(text).then(() => showToast("Report copied to clipboard."));
+};
+
+document.getElementById("btn-email-report").onclick = () => {
+  const report = document.getElementById("report-content").textContent;
+  const toList = [distroConfig.distroEmail, distroConfig.sponsorEmail].filter(Boolean).join(",");
+  if (!toList) { alert("No distribution email set. Please add one in Settings."); return; }
+  fireMailto(toList,
+    `[Forecasting Dashboard] Weekly Run Summary — ${getWeekLabel()}`,
+    report
+  );
+};
+
+document.getElementById("btn-confirm-reset").onclick = () => {
+  TASK_DEFINITIONS.forEach(t => {
+    taskState[t.id] = { status: STATUS.NOT_READY, comment: "", manualBlock: false, startedAt: null, completedAt: null, blockedAt: null };
+  });
+  notifiedSet.clear();
+  saveNotified();
+  TASK_DEFINITIONS.forEach(t => persistTask(t.id));
+  closeModal("modal-report");
+  render();
+  showToast("Week reset. All tasks cleared.");
+};
+
+// ════════════════════════════════════════════════════════════════
+// SETTINGS
+// ════════════════════════════════════════════════════════════════
+document.getElementById("btn-settings").onclick = () => {
+  const p = document.getElementById("settings-panel");
+  p.classList.toggle("open");
+  if (p.classList.contains("open")) buildSettingsUI();
+};
+
+function buildSettingsUI() {
+  const owners = [...new Set(TASK_DEFINITIONS.map(t=>getField(t,"owner")))].sort();
+  const grid   = document.getElementById("settings-email-grid");
+  grid.innerHTML = owners.map(o => `
+    <div class="settings-field">
+      <label>${esc(o)}</label>
+      <input type="email" id="em-${esc(o)}" value="${esc(emailMap[o]||"")}" placeholder="${o.toLowerCase().replace(/\//g,".")}@company.com">
+    </div>`).join("");
+  document.getElementById("input-distro").value  = distroConfig.distroEmail || "";
+  document.getElementById("input-sponsor").value = distroConfig.sponsorEmail || "";
+  document.getElementById("input-tz").value       = selectedTZ || "America/Chicago";
+}
+
+document.getElementById("btn-save-settings").onclick = () => {
+  const owners = [...new Set(TASK_DEFINITIONS.map(t=>getField(t,"owner")))];
+  owners.forEach(o => {
+    const el = document.getElementById(`em-${o}`);
+    if (el) emailMap[o] = el.value.trim();
+  });
+  distroConfig.distroEmail  = document.getElementById("input-distro").value.trim();
+  distroConfig.sponsorEmail = document.getElementById("input-sponsor").value.trim();
+  selectedTZ = document.getElementById("input-tz").value;
+  saveEmails(); saveDistro(); saveTZ();
+  document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
+  document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
+  showToast("Settings saved.");
+  document.getElementById("settings-panel").classList.remove("open");
+  render();
+};
+
+// ════════════════════════════════════════════════════════════════
+// MODAL HELPERS
+// ════════════════════════════════════════════════════════════════
+function openModal(id)  { document.getElementById(id).classList.add("open"); }
+function closeModal(id) { document.getElementById(id).classList.remove("open"); }
+document.querySelectorAll(".modal-overlay").forEach(o => {
+  o.addEventListener("click", e => { if (e.target===o) o.classList.remove("open"); });
+});
+
+// ════════════════════════════════════════════════════════════════
+// TOAST
+// ════════════════════════════════════════════════════════════════
+function showToast(msg, ms=3500) {
+  const c = document.getElementById("toast-container");
+  const t = document.createElement("div"); t.className="toast"; t.textContent=msg;
+  c.appendChild(t);
+  setTimeout(()=>{ t.style.opacity="0"; setTimeout(()=>t.remove(),400); }, ms);
+}
+
+function esc(s) {
+  return String(s||"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+}
+
+// ════════════════════════════════════════════════════════════════
+// INIT
+// ════════════════════════════════════════════════════════════════
+(async () => {
+  document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
+  document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
+
+  if (IS_SHAREPOINT) {
+    // Load emails/distro from localStorage (user-specific prefs)
+    loadAll();
+    spLoading(true);
+    try {
+      const cols = "Id,Title,TaskStatus,TaskComment,ManualBlock,StartedAt,CompletedAt,BlockedAt,OwnerOverride,ReadyWhenOverride,DueByOverride,FileFormatOverride,InstructionsOverride";
+      const d    = await spGet(`${SP_SITE}/_api/web/lists/getbytitle('${SP_LIST}')/items?$top=100&$select=${cols}`);
+      const items = d.d.results;
+
+      // Map existing SP items into state
+      items.forEach(item => {
+        const id = parseInt(item.Title);
+        if (!id) return;
+        spItemMap[id] = item.Id;
+        taskState[id] = {
+          status:      item.TaskStatus   || STATUS.NOT_READY,
+          comment:     item.TaskComment  || "",
+          manualBlock: item.ManualBlock  || false,
+          startedAt:   item.StartedAt    || null,
+          completedAt: item.CompletedAt  || null,
+          blockedAt:   item.BlockedAt    || null
+        };
+        if (!taskOverrides[id]) taskOverrides[id] = {};
+        if (item.OwnerOverride)        taskOverrides[id].owner        = item.OwnerOverride;
+        if (item.ReadyWhenOverride)    taskOverrides[id].readyWhen    = item.ReadyWhenOverride;
+        if (item.DueByOverride)        taskOverrides[id].dueBy        = item.DueByOverride;
+        if (item.FileFormatOverride)   taskOverrides[id].fileFormat   = item.FileFormatOverride;
+        if (item.InstructionsOverride) { try { taskOverrides[id].instructions = JSON.parse(item.InstructionsOverride); } catch(e) {} }
+      });
+
+      // Create SP rows for any tasks not yet in the list
+      for (const t of TASK_DEFINITIONS) {
+        if (!spItemMap[t.id]) {
+          taskState[t.id] = { status: STATUS.NOT_READY, comment: "", manualBlock: false, startedAt: null, completedAt: null, blockedAt: null };
+          await spCreateItem(t.id);
+        }
+      }
+
+      // Poll for live updates every 30 seconds
+      setInterval(spRefresh, 30000);
+      showToast("Connected to SharePoint — live sync active.");
+
+    } catch(e) {
+      console.error("SP init error:", e);
+      showToast("⚠️ Could not reach SharePoint list. Check the list exists and you have access.");
+    }
+    spLoading(false);
+
+  } else {
+    // Local / offline mode — use localStorage only
+    loadAll();
+  }
+
+  render();
+})();
+</script>
+</body>
+</html>
