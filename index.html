@@ -217,16 +217,12 @@
   </div>
 
   <div class="settings-section">
-    <h4>GitHub Sync</h4>
-    <div class="distro-row">
-      <div class="distro-field">
-        <label>GitHub Personal Access Token (enables live multi-user sync via GitHub)</label>
-        <input type="password" id="input-gh-token" placeholder="ghp_xxxxxxxxxxxxxxxxxxxx">
-      </div>
+    <h4>Multi-User Sync</h4>
+    <p style="font-size:11px;color:#64748b;margin-bottom:10px">Share state between users by exporting and importing. Click Export, copy the text, send to a teammate — they click Import and paste it.</p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap">
+      <button type="button" onclick="exportState()" style="background:#00674B;color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:12px;font-weight:600">📋 Export State (Copy to Clipboard)</button>
+      <button type="button" onclick="openImportModal()" style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:8px 16px;cursor:pointer;font-size:12px;font-weight:600">📥 Import State (Paste from teammate)</button>
     </div>
-    <p style="font-size:11px;color:#64748b;margin-top:4px">Token is stored in your browser only. Get one at github.com/settings/tokens — needs <strong>repo</strong> scope.</p>
-      <button type="button" onclick="testGhConnection()" style="margin-top:6px;background:#e2e8f0;color:#1e293b;border:none;border-radius:5px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600">Test Connection</button>
-      <span id="gh-test-result" style="font-size:12px;margin-left:10px"></span>
   </div>
   <div class="settings-section">
     <h4>Distribution &amp; Escalation</h4>
@@ -303,6 +299,19 @@
   </table>
 </div>
 
+
+<!-- Import State Modal -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal">
+    <h2>Import State</h2>
+    <div style="font-size:12px;color:#64748b;margin-bottom:10px">Paste the state JSON from a teammate below and click Import.</div>
+    <textarea id="import-textarea" rows="8" style="width:100%;border:1px solid #cbd5e1;border-radius:6px;padding:8px;font-size:11px;font-family:monospace;resize:vertical" placeholder="Paste exported state JSON here…"></textarea>
+    <div class="modal-actions">
+      <button class="btn-secondary" onclick="closeModal('modal-import')">Cancel</button>
+      <button class="btn-primary" onclick="doImport()">Import</button>
+    </div>
+  </div>
+</div>
 <div id="toast-container"></div>
 
 <!-- ══════════ MODALS ══════════ -->
@@ -723,128 +732,53 @@ const TASK_DEFINITIONS = [
 // CONSTANTS & STORAGE KEYS
 // ════════════════════════════════════════════════════════════════
 // ════════════════════════════════════════════════════════════════
-// GITHUB CONFIG
+// SYNC — localStorage primary, export/import for sharing
 // ════════════════════════════════════════════════════════════════
-const GH_OWNER  = "hmendu-alt";
-const GH_REPO   = "forecasting-dashboard";
-const GH_FILE   = "data.json";
-const GH_BRANCH = "main";
-const GH_API    = `https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/contents/${GH_FILE}`;
 
-// Token stored in localStorage — enter via Settings panel on first use
-function ghToken() { return localStorage.getItem("fcast_gh_token") || ""; }
-
-let ghFileSha = null; // current file SHA — required for PUT updates
-
-// ════════════════════════════════════════════════════════════════
-// GITHUB API HELPERS
-// ════════════════════════════════════════════════════════════════
-async function ghLoad() {
-  const token = ghToken();
-  if (!token) return null;
-  const r = await fetch(`${GH_API}?ref=${GH_BRANCH}&cb=${Date.now()}`, {
-    method: "GET",
-    headers: {
-      "Authorization": `token ${token}`,
-      "Accept": "application/vnd.github.v3+json",
-      "X-GitHub-Api-Version": "2022-11-28"
-    }
-  });
-  if (!r.ok) {
-    const errText = await r.text().catch(()=>"");
-    throw new Error(`GitHub load failed: ${r.status} — ${errText.slice(0,100)}`);
-  }
-  const d = await r.json();
-  ghFileSha = d.sha;
-  const decoded = JSON.parse(atob(d.content.replace(/\n/g, "")));
-  return decoded;
-}
-
-async function ghSave(data) {
-  const token = ghToken();
-  if (!token) { saveState(); return; }
-  const body = {
-    message: `Dashboard update ${new Date().toISOString()}`,
-    content: btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2)))),
-    branch:  GH_BRANCH
-  };
-  if (ghFileSha) body.sha = ghFileSha;
-  const r = await fetch(GH_API, {
-    method: "PUT",
-    headers: {
-      "Authorization": `token ${token}`,
-      "Accept": "application/vnd.github.v3+json",
-      "Content-Type": "application/json",
-      "X-GitHub-Api-Version": "2022-11-28"
-    },
-    body: JSON.stringify(body)
-  });
-  if (!r.ok) {
-    const errText = await r.text().catch(()=>"");
-    throw new Error(`GitHub save failed: ${r.status} — ${errText.slice(0,100)}`);
-  }
-  const d = await r.json();
-  ghFileSha = d.content.sha;
-}
-
-function buildGhData() {
-  return {
-    lastUpdated: new Date().toISOString(),
-    taskState:    taskState,
-    taskOverrides:taskOverrides,
-    emailMap:     emailMap,
-    distroConfig: distroConfig,
-    selectedTZ:   selectedTZ
-  };
-}
-
-function applyGhData(data) {
-  if (data.taskState)     taskState     = data.taskState;
-  if (data.taskOverrides) taskOverrides = data.taskOverrides;
-  if (data.emailMap)      emailMap      = data.emailMap;
-  if (data.distroConfig)  distroConfig  = data.distroConfig;
-  if (data.selectedTZ)    selectedTZ    = data.selectedTZ;
-  TASK_DEFINITIONS.forEach(t => {
-    if (!taskState[t.id]) taskState[t.id] = { status: "notready", comment: "", manualBlock: false, startedAt: null, completedAt: null, blockedAt: null };
-  });
-}
-
-// Called after every state change — saves to GitHub + localStorage
-async function persistTask(taskId) {
+function persistTask(taskId) {
   localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState));
   localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides));
-  if (ghToken()) {
-    try {
-      await ghSave(buildGhData());
-    } catch(e) {
-      showToast("⚠️ GitHub save failed: " + e.message);
-    }
-  }
 }
 
-// Poll GitHub every 30s for live multi-user updates
-async function ghRefresh() {
-  if (!ghToken()) return;
+function exportState() {
+  const data = {
+    lastUpdated:   new Date().toISOString(),
+    taskState:     taskState,
+    taskOverrides: taskOverrides,
+    emailMap:      emailMap,
+    distroConfig:  distroConfig,
+    selectedTZ:    selectedTZ
+  };
+  const json = JSON.stringify(data, null, 2);
+  navigator.clipboard.writeText(json)
+    .then(() => showToast("✅ State copied to clipboard. Share with teammates to sync."))
+    .catch(() => {
+      const ta = document.createElement("textarea");
+      ta.value = json;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      document.body.removeChild(ta);
+      showToast("✅ State copied. Share with teammates to sync.");
+    });
+}
+
+function importState(json) {
   try {
-    const data = await ghLoad();
-    if (data) { applyGhData(data); render(); }
-  } catch(e) { console.warn("GitHub refresh failed:", e); }
-}
-
-// Loading overlay
-function ghLoading(show) {
-  let el = document.getElementById("gh-loading");
-  if (!el) {
-    el = document.createElement("div");
-    el.id = "gh-loading";
-    el.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.4);z-index:999;display:flex;align-items:center;justify-content:center";
-    el.innerHTML = `<div style="background:#fff;padding:30px 40px;border-radius:12px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.25)">
-      <div style="font-size:16px;font-weight:700;color:#00674B;margin-bottom:6px">Connecting to GitHub…</div>
-      <div style="font-size:12px;color:#64748b">Loading live task state from data.json</div>
-    </div>`;
-    document.body.appendChild(el);
+    const data = JSON.parse(json);
+    if (data.taskState)     { taskState     = data.taskState;     localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState)); }
+    if (data.taskOverrides) { taskOverrides = data.taskOverrides; localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides)); }
+    if (data.emailMap)      { emailMap      = data.emailMap;      localStorage.setItem(EMAIL_KEY,    JSON.stringify(emailMap)); }
+    if (data.distroConfig)  { distroConfig  = data.distroConfig;  localStorage.setItem(DISTRO_KEY,   JSON.stringify(distroConfig)); }
+    if (data.selectedTZ)    { selectedTZ    = data.selectedTZ;    localStorage.setItem(TZ_KEY,        selectedTZ); }
+    TASK_DEFINITIONS.forEach(t => {
+      if (!taskState[t.id]) taskState[t.id] = { status: "notready", comment: "", manualBlock: false, startedAt: null, completedAt: null, blockedAt: null };
+    });
+    render();
+    showToast("✅ State imported successfully.");
+  } catch(e) {
+    showToast("❌ Import failed — invalid data. " + e.message);
   }
-  el.style.display = show ? "flex" : "none";
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -1157,18 +1091,17 @@ function render() {
   recomputeAll();
   checkAndNotify();
 
-  // Show/hide setup banner
-  let banner = document.getElementById("setup-banner");
-  if (!ghToken()) {
+  // Sync tip banner - shown once until dismissed
+  if (!sessionStorage.getItem("sync-tip-dismissed")) {
+    let banner = document.getElementById("setup-banner");
     if (!banner) {
       banner = document.createElement("div");
       banner.id = "setup-banner";
-      banner.style.cssText = "background:#fffbeb;border:1px solid #f59e0b;border-left:4px solid #f59e0b;padding:12px 20px;font-size:13px;color:#78350f;display:flex;align-items:center;justify-content:space-between;gap:12px";
-      banner.innerHTML = `<span>⚠️ <strong>Setup required:</strong> Click Settings and enter your GitHub Personal Access Token to enable live sync across all users.</span><button onclick="document.getElementById('btn-settings').click()" style="background:#f59e0b;color:#fff;border:none;border-radius:5px;padding:6px 14px;cursor:pointer;font-size:12px;font-weight:600;white-space:nowrap">Open Settings →</button>`;
-      document.getElementById("progress-wrap").before(banner);
+      banner.style.cssText = "background:#eff6ff;border:1px solid #3b82f6;border-left:4px solid #3b82f6;padding:10px 20px;font-size:12px;color:#1e40af;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap";
+      banner.innerHTML = `<span>💡 <strong>Multi-user tip:</strong> Use Settings → Export State to share your dashboard state with teammates. They click Import State to sync.</span><div style="display:flex;gap:8px"><button onclick="exportState()" style="background:#3b82f6;color:#fff;border:none;border-radius:5px;padding:5px 12px;cursor:pointer;font-size:11px;font-weight:600;white-space:nowrap">📋 Export</button><button onclick="sessionStorage.setItem('sync-tip-dismissed','1');document.getElementById('setup-banner').remove()" style="background:transparent;color:#1e40af;border:1px solid #3b82f6;border-radius:5px;padding:5px 10px;cursor:pointer;font-size:11px">✕</button></div>`;
+      const pw = document.getElementById("progress-wrap");
+      if (pw) pw.before(banner);
     }
-  } else {
-    if (banner) banner.remove();
   }
 
   const tbody = document.getElementById("task-tbody");
@@ -1595,7 +1528,7 @@ function buildSettingsUI() {
   document.getElementById("input-distro").value    = distroConfig.distroEmail || "";
   document.getElementById("input-sponsor").value   = distroConfig.sponsorEmail || "";
   document.getElementById("input-tz").value         = selectedTZ || "America/Chicago";
-  document.getElementById("input-gh-token").value  = ghToken() || "";
+
 }
 
 document.getElementById("btn-save-settings").onclick = () => {
@@ -1607,18 +1540,13 @@ document.getElementById("btn-save-settings").onclick = () => {
   distroConfig.distroEmail  = document.getElementById("input-distro").value.trim();
   distroConfig.sponsorEmail = document.getElementById("input-sponsor").value.trim();
   selectedTZ = document.getElementById("input-tz").value;
-  const newToken = document.getElementById("input-gh-token").value.trim();
-  if (newToken) localStorage.setItem("fcast_gh_token", newToken);
-  else localStorage.removeItem("fcast_gh_token");
+
   saveEmails(); saveDistro(); saveTZ();
   document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
   document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
   showToast("Settings saved.");
   document.getElementById("settings-panel").classList.remove("open");
-  // If token was just set, sync to GitHub immediately
-  if (newToken) {
-    ghSave(buildGhData()).then(() => showToast("✅ Synced to GitHub.")).catch(e => showToast("⚠️ GitHub sync failed: " + e.message));
-  }
+
   render();
 };
 
@@ -1650,71 +1578,26 @@ function esc(s) {
 // ════════════════════════════════════════════════════════════════
 
 // ════════════════════════════════════════════════════════════════
-// TEST GITHUB CONNECTION
+// IMPORT / EXPORT HELPERS
 // ════════════════════════════════════════════════════════════════
-async function testGhConnection() {
-  const token = document.getElementById("input-gh-token").value.trim() || ghToken();
-  const resultEl = document.getElementById("gh-test-result");
-  if (!token) { resultEl.textContent = "❌ No token entered"; resultEl.style.color="#ef4444"; return; }
-  resultEl.textContent = "Testing…"; resultEl.style.color="#64748b";
-  try {
-    const r = await fetch(`${GH_API}?ref=${GH_BRANCH}&cb=${Date.now()}`, {
-      method: "GET",
-      headers: {
-        "Authorization": `token ${token}`,
-        "Accept": "application/vnd.github.v3+json",
-        "X-GitHub-Api-Version": "2022-11-28"
-      }
-    });
-    if (r.ok) {
-      resultEl.textContent = "✅ Connected! GitHub sync is working.";
-      resultEl.style.color="#00674B";
-    } else {
-      const d = await r.json().catch(()=>({}));
-      resultEl.textContent = `❌ Failed: ${r.status} — ${d.message||"Unknown error"}`;
-      resultEl.style.color="#ef4444";
-    }
-  } catch(e) {
-    resultEl.textContent = `❌ Error: ${e.message}`;
-    resultEl.style.color="#ef4444";
-  }
+function openImportModal() {
+  document.getElementById("import-textarea").value = "";
+  document.getElementById("settings-panel").classList.remove("open");
+  openModal("modal-import");
+}
+
+function doImport() {
+  const json = document.getElementById("import-textarea").value.trim();
+  if (!json) { showToast("Please paste the exported state first."); return; }
+  importState(json);
+  closeModal("modal-import");
 }
 
 (async () => {
   document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
   document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
-
   loadAll();
-  render(); // Show tasks immediately from local state
-
-  const token = ghToken();
-  if (token) {
-    showToast("🔄 Syncing with GitHub...");
-    try {
-      const data = await ghLoad();
-      if (data) {
-        applyGhData(data);
-        // Sync localStorage
-        localStorage.setItem(STORAGE_KEY,  JSON.stringify(taskState));
-        localStorage.setItem(OVERRIDE_KEY, JSON.stringify(taskOverrides));
-        localStorage.setItem(EMAIL_KEY,    JSON.stringify(emailMap));
-        localStorage.setItem(DISTRO_KEY,   JSON.stringify(distroConfig));
-        localStorage.setItem(TZ_KEY,       selectedTZ);
-      }
-      // Update week label with loaded TZ
-      document.getElementById("week-label").textContent = getWeekLabel() + " — All times " + tzLabel();
-      document.getElementById("tz-legend-label").textContent = "All times " + tzLabel();
-      // Poll every 30s for live multi-user updates
-      setInterval(ghRefresh, 30000);
-      showToast("✅ Connected to GitHub — live sync active.");
-      render(); // Re-render with GitHub data
-    } catch(e) {
-      console.error("GitHub init error:", e);
-      showToast("⚠️ GitHub sync failed: " + e.message + ". Showing local data.");
-    }
-  } else {
-    showToast("ℹ️ Enter your GitHub token in Settings to enable live sync.");
-  }
+  render();
 })();
 </script>
 </body>
